@@ -1,0 +1,143 @@
+[package]
+name = "lightstream"
+version = "0.4.4"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+keywords = [
+    "arrow",
+    "apache-arrow",
+    "polars",
+    "streaming",
+    "simd",
+]
+categories = [
+    "asynchronous",
+    "data-structures",
+    "encoding",
+    "filesystem",
+    "network-programming",
+]
+description = "Composable, zero-copy Arrow IPC and native data streaming for Rust with SIMD-aligned I/O, async support, and memory-mapping."
+repository = "https://github.com/pbower/lightstream"
+homepage = "https://github.com/pbower/lightstream"
+documentation = "https://docs.rs/lightstream"
+
+[dependencies]
+tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
+futures-core = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
+flatbuffers = "25.12.19"
+libc = { version = "0.2.183", optional = true }
+futures-sink = "0.3.32"
+minarrow = { version = "0.9.1", features = ["chunked", "views", "large_string"] }
+snap = { version = "1.0", optional = true }
+tokio-tungstenite = { version = "0.28", optional = true }
+zstd = { version = "0.13", optional = true }
+quinn = { version = "0.11", optional = true, default-features = false, features = ["runtime-tokio", "rustls-ring"] }
+wtransport = { version = "0.7", optional = true }
+prost = { version = "0.14", optional = true }
+rmp-serde = { version = "1", optional = true }
+serde = { version = "1", optional = true, features = ["derive"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3.26.0"
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
+
+[[bench]]
+name = "transport_throughput"
+harness = false
+required-features = ["protocol", "tcp", "uds"]
+
+[features]
+extended_categorical = ["minarrow/extended_categorical"]
+large_string = ["minarrow/large_string"]
+datetime = ["minarrow/datetime"]
+extended_numeric_types = ["minarrow/extended_numeric_types"]
+mmap = ["libc"]
+
+# Adds parquet IO
+parquet = []
+
+# TCP transport
+tcp = ["tokio/net"]
+# WebSocket transport
+websocket = ["tcp", "tokio-tungstenite"]
+# QUIC transport
+quic = ["tokio/net", "quinn"]
+# WebTransport transport
+webtransport = ["tokio/net", "wtransport"]
+# Unix domain socket transport
+uds = ["tokio/net"]
+# Stdin/stdout transport
+stdio = ["tokio/io-std"]
+
+# Lightstream protocol multiplexing
+protocol = []
+# Protobuf support for protocol messages via prost
+protobuf = ["protocol", "prost"]
+# MessagePack support for protocol messages via rmp-serde
+msgpack = ["protocol", "rmp-serde", "serde"]
+
+# Adds snappy compression option
+snappy = ["snap"]
+# Adds zstd compression option
+zstd = ["dep:zstd"]
+
+default = []
+
+[[example]]
+name = "lightstream"
+required-features = ["protocol", "tcp", "msgpack"]
+
+[[example]]
+name = "tcp_lightstream"
+path = "examples/tcp/lightstream.rs"
+required-features = ["protocol", "tcp", "msgpack"]
+
+[[example]]
+name = "tcp_arrow"
+path = "examples/tcp/arrow.rs"
+required-features = ["tcp"]
+
+[[example]]
+name = "websocket_lightstream"
+path = "examples/websocket/lightstream.rs"
+required-features = ["protocol", "websocket", "msgpack"]
+
+[[example]]
+name = "websocket_arrow"
+path = "examples/websocket/arrow.rs"
+required-features = ["websocket"]
+
+[[example]]
+name = "uds_lightstream"
+path = "examples/uds/lightstream.rs"
+required-features = ["protocol", "uds", "msgpack"]
+
+[[example]]
+name = "uds_arrow"
+path = "examples/uds/arrow.rs"
+required-features = ["uds"]
+
+[[example]]
+name = "quic_lightstream"
+path = "examples/quic/lightstream.rs"
+required-features = ["protocol", "quic", "msgpack"]
+
+[[example]]
+name = "quic_arrow"
+path = "examples/quic/arrow.rs"
+required-features = ["quic"]
+
+[[example]]
+name = "webtransport_lightstream"
+path = "examples/webtransport/lightstream.rs"
+required-features = ["protocol", "webtransport", "msgpack"]
+
+[[example]]
+name = "webtransport_arrow"
+path = "examples/webtransport/arrow.rs"
+required-features = ["webtransport"]
