@@ -323,17 +323,19 @@ where
                 self.out_frames.push_back(footer_frame);
             }
             IPCMessageProtocol::Stream => {
-                // EOS marker for stream protocol
-                let frame = IPCFrame {
-                    meta: &[],
-                    body: &[],
-                    protocol: IPCMessageProtocol::Stream,
-                    is_first: false,
-                    is_last: true,
-                    footer_bytes: None,
-                };
-                let (eos_frame, _) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
-                self.out_frames.push_back(eos_frame);
+                // Only emit EOS marker if we actually wrote something (not in Fresh state)
+                if self.state != WriterState::Fresh {
+                    let frame = IPCFrame {
+                        meta: &[],
+                        body: &[],
+                        protocol: IPCMessageProtocol::Stream,
+                        is_first: false,
+                        is_last: true,
+                        footer_bytes: None,
+                    };
+                    let (eos_frame, _) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
+                    self.out_frames.push_back(eos_frame);
+                }
             }
         }
         self.state = WriterState::Closed;
@@ -420,8 +422,16 @@ where
         match array {
             Array::NumericArray(num) => {
                 let (data_bytes, null_bitmap) = match num {
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::Int8(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::Int16(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
                     NumericArray::Int32(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
                     NumericArray::Int64(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::UInt8(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::UInt16(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
                     NumericArray::UInt32(arr) => {
                         (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
                     }
@@ -534,6 +544,30 @@ where
                 fb_buffers,
                 body
             ),
+            #[cfg(feature = "datetime")]
+            Array::TemporalArray(temp) => {
+                let (data_bytes, null_bitmap) = match temp {
+                    minarrow::TemporalArray::Datetime32(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    minarrow::TemporalArray::Datetime64(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    minarrow::TemporalArray::Null => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "null temporal array not supported"
+                        ));
+                    }
+                };
+                self.encode_field_buffers(
+                    field.nullable,
+                    null_bitmap,
+                    &[data_bytes],
+                    n_rows,
+                    col_idx,
+                    false,
+                    fb_field_nodes,
+                    fb_buffers,
+                    body
+                )
+            }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("unsupported column type in writer: {}", field.name)

@@ -202,6 +202,12 @@ mod tests {
         let table = test_table();
 
         let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        // Register dictionaries for categorical columns
+        for (col_idx, col) in table.cols.iter().enumerate() {
+            if let Some(values) = extract_dictionary_values_from_col(col) {
+                writer.register_dictionary(col_idx as i64, values);
+            }
+        }
         writer.write(&table).unwrap();
         writer.finish().unwrap();
 
@@ -222,6 +228,12 @@ mod tests {
         table2.name = "another".into();
 
         let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        // Register dictionaries for categorical columns
+        for (col_idx, col) in table1.cols.iter().enumerate() {
+            if let Some(values) = extract_dictionary_values_from_col(col) {
+                writer.register_dictionary(col_idx as i64, values);
+            }
+        }
         writer.write(&table1).unwrap();
         writer.write(&table2).unwrap();
         writer.finish().unwrap();
@@ -275,6 +287,12 @@ mod tests {
         let table = test_table();
 
         let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema, IPCMessageProtocol::Stream);
+        // Register dictionaries for categorical columns
+        for (col_idx, col) in table.cols.iter().enumerate() {
+            if let Some(values) = extract_dictionary_values_from_col(col) {
+                writer.register_dictionary(col_idx as i64, values);
+            }
+        }
         writer.write(&table).unwrap();
         writer.finish().unwrap();
 

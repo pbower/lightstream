@@ -121,12 +121,32 @@ fn build_flatbuf_field<'fbb>(
 
     // Build the type and optional dictionary encoding
     let (fb_type_type, fb_type_offset, fb_dict) = match &field.dtype {
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::Int8 => {
+            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 8, is_signed: true });
+            (fbm::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::Int16 => {
+            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 16, is_signed: true });
+            (fbm::Type::Int, Some(int.as_union_value()), None)
+        }
         ArrowType::Int32 => {
             let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 32, is_signed: true });
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int64 => {
             let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 64, is_signed: true });
+            (fbm::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::UInt8 => {
+            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 8, is_signed: false });
+            (fbm::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::UInt16 => {
+            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 16, is_signed: false });
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt32 => {
@@ -163,6 +183,16 @@ fn build_flatbuf_field<'fbb>(
         ArrowType::LargeString => {
             let s = fbm::LargeUtf8::create(fbb, &fbm::LargeUtf8Args {});
             (fbm::Type::Utf8, Some(s.as_union_value()), None)
+        }
+        #[cfg(feature = "datetime")]
+        ArrowType::Date32 => {
+            let date = fbm::Date::create(fbb, &fbm::DateArgs { unit: fbm::DateUnit::DAY });
+            (fbm::Type::Date, Some(date.as_union_value()), None)
+        }
+        #[cfg(feature = "datetime")]
+        ArrowType::Date64 => {
+            let date = fbm::Date::create(fbb, &fbm::DateArgs { unit: fbm::DateUnit::MILLISECOND });
+            (fbm::Type::Date, Some(date.as_union_value()), None)
         }
         ArrowType::Dictionary(idx_ty) => {
             // Build index type for dictionary
@@ -408,12 +438,32 @@ fn build_flatbuf_field_file<'fbb>(
     let custom_metadata = None;
 
     let (fb_type_type, fb_type_offset, fb_dict) = match &field.dtype {
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::Int8 => {
+            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 8, is_signed: true });
+            (fbf::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::Int16 => {
+            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 16, is_signed: true });
+            (fbf::Type::Int, Some(int.as_union_value()), None)
+        }
         ArrowType::Int32 => {
             let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 32, is_signed: true });
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int64 => {
             let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 64, is_signed: true });
+            (fbf::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::UInt8 => {
+            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 8, is_signed: false });
+            (fbf::Type::Int, Some(int.as_union_value()), None)
+        }
+        #[cfg(feature = "extended_numeric_types")]
+        ArrowType::UInt16 => {
+            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 16, is_signed: false });
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt32 => {
@@ -450,6 +500,16 @@ fn build_flatbuf_field_file<'fbb>(
         ArrowType::LargeString => {
             let s = fbf::LargeUtf8::create(fbb, &fbf::LargeUtf8Args {});
             (fbf::Type::Utf8, Some(s.as_union_value()), None)
+        }
+        #[cfg(feature = "datetime")]
+        ArrowType::Date32 => {
+            let date = fbf::Date::create(fbb, &fbf::DateArgs { unit: fbf::DateUnit::DAY });
+            (fbf::Type::Date, Some(date.as_union_value()), None)
+        }
+        #[cfg(feature = "datetime")]
+        ArrowType::Date64 => {
+            let date = fbf::Date::create(fbb, &fbf::DateArgs { unit: fbf::DateUnit::MILLISECOND });
+            (fbf::Type::Date, Some(date.as_union_value()), None)
         }
         ArrowType::Dictionary(idx_ty) => {
             let idx_width = match idx_ty {
