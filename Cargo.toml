@@ -1,0 +1,32 @@
+[package]
+name = "io"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] } # "macros", "time"
+futures-core = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
+flatbuffers = "25.2.10"
+libc = "0.2.174"
+futures-sink = "0.3.31"
+memmap2 = "0.9.7"
+minarrow = { version = "0.1.6", features = ["chunked"] }
+
+[dev-dependencies]
+tempfile = "3.20.0"
+
+[features]
+extended_categorical = ["minarrow/extended_categorical"]
+large_string = ["minarrow/large_string"]
+datetime = ["minarrow/datetime"]
+extended_numeric_types = ["minarrow/extended_numeric_types"] # TODO: Test
+
+# Adds parquet IO
+parquet = []
+
+# Adds snappy compression option
+snappy = []
+# Adds zstd compression option
+zstd = []
+default = ["datetime", "large_string", "extended_categorical", "extended_numeric_types"]
