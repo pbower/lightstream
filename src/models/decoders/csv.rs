@@ -209,14 +209,14 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
     // --- Build columns ---
     let mut cols: Vec<FieldArray> = Vec::with_capacity(col_count);
     for (col_idx, field) in schema.iter().enumerate() {
-        let mut null_mask = vec![false; n_rows];
+        let mut null_mask = vec![true; n_rows]; // Arrow: true=valid, false=null
         let mut str_values: Vec<Option<&str>> = Vec::with_capacity(n_rows);
 
         for row in 0..n_rows {
             let val = rows[row][col_idx].trim();
             let is_null = nulls.iter().any(|n| n.eq_ignore_ascii_case(val));
             if is_null {
-                null_mask[row] = true;
+                null_mask[row] = false; // Arrow: false=null
                 str_values.push(None);
             } else {
                 str_values.push(Some(val));
@@ -383,7 +383,7 @@ fn parse_numeric_column<T: std::str::FromStr + Copy + Default + 'static>(
 ) -> std::io::Result<Array> {
     let mut out = vec64![T::default(); values.len()];
     for (i, v) in values.iter().enumerate() {
-        if !null_mask[i] {
+        if null_mask[i] { // Arrow: true=valid
             out[i] = v.unwrap().parse::<T>().map_err(|_| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to parse number")
             })?;
@@ -456,7 +456,7 @@ fn parse_numeric_column<T: std::str::FromStr + Copy + Default + 'static>(
 fn parse_bool_column(values: &[Option<&str>], null_mask: &[bool]) -> std::io::Result<Array> {
     let mut out = vec64![false; values.len()];
     for (i, v) in values.iter().enumerate() {
-        if !null_mask[i] {
+        if null_mask[i] { // Arrow: true=valid
             let s = v.unwrap().to_ascii_lowercase();
             out[i] = s == "true" || s == "1" || s == "t";
         }
@@ -472,7 +472,7 @@ fn parse_string_column(values: &[Option<&str>], null_mask: &[bool]) -> io::Resul
     let mut data = Vec64::with_capacity(values.len() * 8);
     let mut pos = 0u32;
     for (i, v) in values.iter().enumerate() {
-        if !null_mask[i] {
+        if null_mask[i] { // Arrow: true=valid
             let s = v.unwrap().as_bytes();
             data.extend_from_slice(s);
             pos += s.len() as u32;
@@ -495,7 +495,7 @@ fn parse_categorical_column(values: &[Option<&str>], null_mask: &[bool]) -> io::
     let mut codes = vec64![0u32; values.len()];
 
     for (i, v) in values.iter().enumerate() {
-        if null_mask[i] {
+        if !null_mask[i] { // Arrow: false=null, so skip nulls
             continue;
         }
         let s = v.unwrap();
@@ -554,10 +554,12 @@ mod tests {
             _ => panic!("wrong type")
         }
 
-        // Nulls
+        // Nulls: strings column has values ["hello", "", "world", "rust"] where "" is null
+        // So 3 valid values, 1 null → count_ones() should be 3
         match &table.cols[1].array {
             Array::TextArray(TextArray::String32(arr)) => {
-                assert_eq!(arr.null_mask.as_ref().unwrap().count_ones(), 1);
+                assert_eq!(arr.null_mask.as_ref().unwrap().count_ones(), 3); // 3 valid, 1 null
+                assert_eq!(table.cols[1].null_count, 1); // Verify null count is correct
             }
             _ => panic!("wrong type")
         }

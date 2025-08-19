@@ -183,6 +183,18 @@ mod tests {
     use std::task::{Context, Poll};
     use tokio::io::{duplex, AsyncRead, ReadBuf, AsyncWriteExt};
 
+    /// Helper function to register dictionaries for categorical columns in a table
+    fn register_dictionaries_for_table<B: crate::traits::stream_buffer::StreamBuffer + Unpin + 'static>(
+        writer: &mut TableStreamWriter<B>, 
+        table: &Table
+    ) {
+        for (col_idx, col) in table.cols.iter().enumerate() {
+            if let Some(values) = crate::utils::extract_dictionary_values_from_col(col) {
+                writer.register_dictionary(col_idx as i64, values);
+            }
+        }
+    }
+
     /// A helper that implements both `Stream<Item=io::Result<Vec<u8>>>` and `AsyncRead`
     /// by splitting out the raw bytes (for AsyncRead) and the same frames for the Stream.
     struct Combined {
@@ -220,6 +232,7 @@ mod tests {
         let schema = make_schema_all_types();
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
         writer.write(&table).unwrap();
         writer.write(&table).unwrap();
         writer.finish().unwrap();
@@ -227,7 +240,7 @@ mod tests {
 
         // write all bytes into a duplex and close
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
-        let (mut tx, rx) = duplex(16 * 1024);
+        let (mut tx, rx) = duplex(64 * 1024); // Increase buffer size for dictionary data
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
@@ -252,6 +265,7 @@ mod tests {
         let schema = make_schema_all_types();
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
         // three batches
         writer.write(&table).unwrap();
         writer.write(&table).unwrap();
@@ -260,7 +274,7 @@ mod tests {
         let frames = writer.drain_all_frames();
 
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
-        let (mut tx, rx) = duplex(16 * 1024);
+        let (mut tx, rx) = duplex(64 * 1024); // Increase buffer size for dictionary data
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
@@ -281,13 +295,14 @@ mod tests {
         let schema = make_schema_all_types();
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
         writer.write(&table).unwrap();
         writer.write(&table).unwrap();
         writer.finish().unwrap();
         let frames = writer.drain_all_frames();
 
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
-        let (mut tx, rx) = duplex(16 * 1024);
+        let (mut tx, rx) = duplex(64 * 1024); // Increase buffer size for dictionary data
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
@@ -313,13 +328,14 @@ mod tests {
         let schema = make_schema_all_types();
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
         writer.write(&table).unwrap();
         writer.write(&table).unwrap();
         writer.finish().unwrap();
         let frames = writer.drain_all_frames();
 
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
-        let (mut tx, rx) = duplex(16 * 1024);
+        let (mut tx, rx) = duplex(64 * 1024); // Increase buffer size for dictionary data
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
@@ -335,19 +351,62 @@ mod tests {
         assert_eq!(t.cols.len(), table.cols.len());
     }
 
+
+
+
     /// One-by-one batch reading with `read_next`.
+    /// Debug test to understand EOS handling issue
+    #[tokio::test]
+    async fn test_debug_buffer_consumption() {
+        let table = make_all_types_table();
+        let schema = make_schema_all_types();
+        let mut writer =
+            TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
+        writer.write(&table).unwrap();
+        writer.finish().unwrap();
+        let frames = writer.drain_all_frames();
+
+        // Check what's in the last frame
+        println!("Total frames: {}", frames.len());
+        for (i, frame) in frames.iter().enumerate() {
+            println!("Frame {}: {} bytes = {:?}", i, frame.len(), &frame[..std::cmp::min(frame.len(), 20)]);
+        }
+
+        let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
+        println!("Total bytes: {}", all_bytes.len());
+        println!("Last 20 bytes: {:?}", &all_bytes[all_bytes.len()-20..]);
+        
+        let (mut tx, rx) = duplex(64 * 1024);
+        tx.write_all(&all_bytes).await.unwrap();
+        drop(tx);
+
+        let combined = Combined {
+            frames: VecDeque::from(frames),
+            reader: rx,
+        };
+
+        let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
+        let result = reader.read_all_tables().await;
+        match result {
+            Ok(tables) => println!("Success: {} tables", tables.len()),
+            Err(e) => println!("Error: {}", e),
+        }
+    }
+
     #[tokio::test]
     async fn test_read_next_and_schema() {
         let table = make_all_types_table();
         let schema = make_schema_all_types();
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        register_dictionaries_for_table(&mut writer, &table);
         writer.write(&table).unwrap();
         writer.finish().unwrap();
         let frames = writer.drain_all_frames();
 
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
-        let (mut tx, rx) = duplex(16 * 1024);
+        let (mut tx, rx) = duplex(64 * 1024); // Increase buffer size for dictionary data
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 

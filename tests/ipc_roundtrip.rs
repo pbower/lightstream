@@ -2,12 +2,12 @@
 mod integration {
     use std::sync::Arc;
 
-    use ::io::enums::BufferChunkSize;
-    use ::io::models::readers::ipc::table_stream_reader::TableStreamReader64;
-    use ::io::models::streams::disk::DiskByteStream;
-    use ::io::enums::IPCMessageProtocol;
+    use ::lightstream_io::enums::BufferChunkSize;
+    use ::lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
+    use ::lightstream_io::models::streams::disk::DiskByteStream;
+    use ::lightstream_io::enums::IPCMessageProtocol;
     use futures_util::stream::StreamExt;
-    use ::io::models::writers::ipc::table_stream_writer::TableStreamWriter;
+    use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
     use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
     use minarrow::*;
 

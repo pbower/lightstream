@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod writer_integration_tests {
     use std::io::{Cursor, Seek, SeekFrom};
-    use io::{compression::Compression, models::{readers::parquet_reader::read_parquet_table, writers::parquet_writer::{write_parquet_table, PAGE_CHUNK_SIZE}}};
+    use lightstream_io::{compression::Compression, models::{readers::parquet_reader::read_parquet_table, writers::parquet_writer::{write_parquet_table, PAGE_CHUNK_SIZE}}};
     use minarrow::{ffi::arrow_dtype::CategoricalIndexType, vec64, Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, MaskedArray, NumericArray, StringArray, Table};
 
 

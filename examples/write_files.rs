@@ -1,4 +1,4 @@
-use io::models::writers::ipc::table_writer::write_table_to_file;
+use lightstream_io::models::writers::ipc::table_writer::write_table_to_file;
 use minarrow::{
     Array, ArrowType, BooleanArray, Buffer, CategoricalArray, Field, FieldArray,
     IntegerArray, StringArray, Table, Vec64, vec64

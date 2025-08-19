@@ -145,21 +145,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
-name = "io"
-version = "0.1.0"
-dependencies = [
- "flatbuffers",
- "futures-core",
- "futures-sink",
- "futures-util",
- "libc",
- "memmap2",
- "minarrow",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "io-uring"
 version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -175,6 +160,21 @@ name = "libc"
 version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+
+[[package]]
+name = "lightstream-io"
+version = "0.1.0"
+dependencies = [
+ "flatbuffers",
+ "futures-core",
+ "futures-sink",
+ "futures-util",
+ "libc",
+ "memmap2",
+ "minarrow",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "linux-raw-sys"
