@@ -6,25 +6,16 @@
 //! # Overview
 //!
 //! - **File protocol**: bounded, random-access, with header magic, aligned frames, and trailing magic/footer.
-//! - **Stream protocol**: unbounded, always emits 8-byte continuation markers before each message frame (for chunking/streaming).
-//! - Handles frame parsing, alignment, footer recognition, and correct protocol-specific state transitions.
+//! - **Stream protocol**: unbounded, emits 8-byte continuation markers before messages (or legacy 4-byte length without marker).
 //!
 //! The decoder works as a state machine, consuming input buffers and producing `ArrowIPCMessage` instances as complete frames are detected.
-//!
-//! # Usage
-//!
-//! Instantiate via [`ArrowIPCFrameDecoder::new(protocol)`] for the desired protocol.
-//! Feed it with input buffers (possibly incomplete), and it will return either:
-//! - [`DecodeResult::NeedMore`] if more input is required for a full frame.
-//! - [`DecodeResult::Frame { frame, consumed }`] when a full message+body has been parsed.
-//!
-//! Supports incremental decoding and protocol autodetection where permitted by the Arrow spec.
 
 use std::io;
 use std::marker::PhantomData;
 
 use crate::constants::{
-    ARROW_MAGIC_NUMBER, ARROW_MAGIC_NUMBER_PADDED, CONTINUATION_MARKER_LEN, CONTINUATION_SENTINEL, FILE_CLOSING_MAGIC_LEN, FILE_OPENING_MAGIC_LEN, METADATA_SIZE_PREFIX
+    ARROW_MAGIC_NUMBER, ARROW_MAGIC_NUMBER_PADDED, CONTINUATION_MARKER_LEN, CONTINUATION_SENTINEL,
+    FILE_CLOSING_MAGIC_LEN, FILE_OPENING_MAGIC_LEN, METADATA_SIZE_PREFIX,
 };
 use crate::enums::{DecodeResult, DecodeState, IPCMessageProtocol};
 use crate::models::frames::ipc_message::ArrowIPCMessage;
@@ -32,87 +23,88 @@ use crate::traits::frame_decoder::FrameDecoder;
 use crate::traits::stream_buffer::StreamBuffer;
 use crate::utils::align_8;
 
-
 /// Decoder for Arrow IPC (file/stream) format state machine.
-//
-/// See [Arrow IPC Streaming Format](https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format)
-/// and [Arrow File Format](https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format)
 pub struct ArrowIPCFrameDecoder<B: StreamBuffer> {
     format: IPCMessageProtocol,
     state: DecodeState<B>,
-    _phantom: PhantomData<B>
+    /// Bytes of *prefix* that precede the flatbuffer message for the *current* frame:
+    /// - STREAM: 4 (length) or 8 (marker + length)
+    /// - FILE: always 4 (length)
+    pending_prefix_len: usize,
+    /// True until we have *accounted for* the initial 8-byte file magic
+    /// by including it in the `consumed` count of the first FILE frame.
+    file_magic_unconsumed: bool,
+    _phantom: PhantomData<B>,
 }
 
 impl<B: StreamBuffer> FrameDecoder for ArrowIPCFrameDecoder<B> {
     type Frame = ArrowIPCMessage<B>;
 
-    /// Main decode entry point.
-    ///
-    /// - Accepts any size buffer (may be partial).
-    /// - Returns `DecodeResult::NeedMore` if not enough data for a full frame.
-    /// - Returns `DecodeResult::Frame` with message and body if a full frame is available.
-    /// - Consumes the minimum required bytes per frame.
     fn decode(&mut self, buf: &[u8]) -> io::Result<DecodeResult<Self::Frame>> {
         loop {
-            // Protocol auto-detect for Stream-with-File-magic: switch to File mode if magic is detected at head
+            // Auto-detect File magic at head in "Stream" mode (some writers do this).
             if matches!(self.state, DecodeState::Initial)
                 && matches!(self.format, IPCMessageProtocol::Stream)
                 && Self::has_opening_file_magic(buf)
             {
                 self.format = IPCMessageProtocol::File;
+                self.file_magic_unconsumed = true;
                 self.state = DecodeState::ReadingMessageLength;
-                continue;
+                // continue within same buffer
             }
 
             let state = std::mem::replace(&mut self.state, DecodeState::Initial);
-            let result = match state {
+            let step = match state {
                 DecodeState::Initial => self.decode_initial(buf)?,
-                DecodeState::ReadingContinuationSize { .. } => self.decode_continuation_size(buf)?,
+                DecodeState::ReadingContinuationSize { .. } => {
+                    // We don’t use this state anymore; keep compatibility by re-routing.
+                    self.state = DecodeState::ReadingMessageLength;
+                    None
+                }
                 DecodeState::ReadingMessageLength => self.decode_message_length(buf)?,
                 DecodeState::ReadingMessage { msg_len } => self.decode_message(buf, msg_len)?,
                 DecodeState::ReadingBody { body_len, message } => {
-                                            self.decode_body(buf, body_len, message)?
-                                        }
-                DecodeState::ReadingFooter { footer_len, footer_offset } => {
-                                            self.decode_footer(buf, footer_len, footer_offset)?
-                                        }
-                DecodeState::Done => return Ok(DecodeResult::NeedMore),
+                    self.decode_body(buf, body_len, message)?
+                }
+                DecodeState::ReadingFooter {
+                    footer_len,
+                    footer_offset,
+                } => self.decode_footer(buf, footer_len, footer_offset)?,
+                DecodeState::Done => Some(DecodeResult::NeedMore),
                 DecodeState::AfterMagic => {
-                    // After file magic, immediately proceed to reading message length at offset 8
+                    // The first FILE frame must still count the 8-byte magic in `consumed`.
+                    // We do not consume/emit here; just proceed to read the first length.
                     self.state = DecodeState::ReadingMessageLength;
-                    continue;
+                    None
                 }
                 DecodeState::AfterContMarker => {
-                    // After continuation marker, proceed to reading message length at offset 4
+                    // Not used; STREAM markers are handled via `pending_prefix_len`.
                     self.state = DecodeState::ReadingMessageLength;
-                    continue;
+                    None
                 }
             };
 
-            if let Some(val) = result {
-                return Ok(val);
+            if let Some(done) = step {
+                return Ok(done);
             }
+            // otherwise loop and continue progressing within the same input slice
         }
     }
 }
 
 impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
-    /// Construct a new decoder for the given Arrow IPC protocol.
-    ///
-    /// - `IPCMessageProtocol::Stream`: expects stream continuation markers before each message.
-    /// - `IPCMessageProtocol::File`: expects file magic, trailing magic/footer, and aligned frames.
     pub fn new(format: IPCMessageProtocol) -> Self {
         Self {
             format,
             state: DecodeState::Initial,
-            _phantom: PhantomData
+            pending_prefix_len: 0,
+            file_magic_unconsumed: matches!(format, IPCMessageProtocol::File),
+            _phantom: PhantomData,
         }
     }
 
-    /// Construct a decoder that skips file magic validation (for some advanced usages).
-    /// Only for scenarios where the header is known valid or has already been checked.
+    /// Construct a decoder that skips file magic validation/consumption.
     pub fn new_without_header_check(format: IPCMessageProtocol) -> Self {
-        // Only for File: skip the header, start directly at message length
         Self {
             format,
             state: if format == IPCMessageProtocol::File {
@@ -120,72 +112,73 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
             } else {
                 DecodeState::Initial
             },
-            _phantom: PhantomData
+            pending_prefix_len: 0,
+            file_magic_unconsumed: false,
+            _phantom: PhantomData,
         }
     }
 
-    /// Reads a little-endian u32 from the provided slice (at start of slice).
     #[inline]
     fn read_u32_le(buf: &[u8]) -> u32 {
         u32::from_le_bytes(buf[..4].try_into().unwrap())
     }
 
-    /// Returns true if the buffer starts with valid Arrow file magic.
-    /// (`b"ARROW1\0\0"`)
     #[inline]
     fn has_opening_file_magic(buf: &[u8]) -> bool {
-        buf.len() >= FILE_OPENING_MAGIC_LEN && &buf[..8] == ARROW_MAGIC_NUMBER_PADDED
+        buf.len() >= FILE_OPENING_MAGIC_LEN && &buf[..FILE_OPENING_MAGIC_LEN] == ARROW_MAGIC_NUMBER_PADDED
     }
 
-    /// Returns true if the buffer starts with a valid Arrow stream continuation marker.
-    /// (`0xFFFF_FFFF`)
     #[inline]
     fn has_continuation_sentinel(buf: &[u8]) -> bool {
         buf.len() >= METADATA_SIZE_PREFIX && Self::read_u32_le(buf) == CONTINUATION_SENTINEL
     }
 
     #[inline]
-    fn has_file_footer_markers(buf: &[u8], offset: usize, msg_len: usize) -> bool {
-        msg_len > 0
-            && offset + METADATA_SIZE_PREFIX + msg_len + FILE_OPENING_MAGIC_LEN <= buf.len()
-    }
-
-    #[inline]
     fn has_eos_marker(buf: &[u8]) -> bool {
         buf.len() >= 8
-                    && Self::read_u32_le(&buf[0..4]) == 0xFFFF_FFFF
-                    && Self::read_u32_le(&buf[4..8]) == 0x0000_0000
+            && Self::read_u32_le(&buf[0..4]) == 0xFFFF_FFFF
+            && Self::read_u32_le(&buf[4..8]) == 0x0000_0000
     }
 
-    /// Returns current message offset for the *start* of message metadata,
-    /// based on protocol and state.
     #[inline]
-    fn get_message_offset(&self) -> usize {
-        match self.state {
-            DecodeState::AfterMagic => FILE_OPENING_MAGIC_LEN,
-            DecodeState::AfterContMarker => CONTINUATION_MARKER_LEN,
-            _ => 0,
+    fn has_file_footer_markers(buf: &[u8], len_off: usize, msg_len: usize) -> bool {
+        // After the (u32) length and `msg_len` bytes, the trailing magic must fit.
+        msg_len > 0 && len_off + METADATA_SIZE_PREFIX + msg_len + FILE_OPENING_MAGIC_LEN <= buf.len()
+    }
+
+    /// For the *current* frame, return 8 only if FILE and header has not been counted yet.
+    #[inline]
+    fn current_base_offset(&self) -> usize {
+        if self.format == IPCMessageProtocol::File && self.file_magic_unconsumed {
+            FILE_OPENING_MAGIC_LEN
+        } else {
+            0
         }
     }
 
     /// Handles initial protocol-specific header detection (magic or marker).
     #[inline]
-    fn decode_initial(&mut self, buf: &[u8]) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
+    fn decode_initial(
+        &mut self,
+        buf: &[u8],
+    ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
         match self.format {
             IPCMessageProtocol::File => {
+                // Validate header; do NOT mark it consumed yet. We’ll include +8 in the first frame’s `consumed`.
                 if buf.len() < FILE_OPENING_MAGIC_LEN {
                     return Ok(Some(DecodeResult::NeedMore));
                 }
                 if !Self::has_opening_file_magic(buf) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "Invalid Arrow file magic header"
+                        "Invalid Arrow file magic header",
                     ));
                 }
                 self.state = DecodeState::AfterMagic;
+                // Continue within same buffer
             }
             IPCMessageProtocol::Stream => {
-                // Check for EOS: 0xFFFF_FFFF + 0x00000000 (8 bytes)
+                // EOS at start?
                 if Self::has_eos_marker(buf) {
                     return Ok(Some(DecodeResult::Frame {
                         frame: ArrowIPCMessage {
@@ -195,84 +188,115 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
                         consumed: 8,
                     }));
                 }
+
+                // Continuation marker present?
                 if Self::has_continuation_sentinel(buf) {
-                    if buf.len() < CONTINUATION_MARKER_LEN {
-                        return Ok(Some(DecodeResult::NeedMore));
-                    }
-                    self.state = DecodeState::AfterContMarker;
+                    self.pending_prefix_len = 8; // marker (4) + length (4)
                 } else {
-                    // (per spec, this can be legal if writer skips marker on very first frame)
-                    self.state = DecodeState::ReadingMessageLength;
+                    self.pending_prefix_len = 4; // legacy stream: just a 4-byte length
                 }
+                self.state = DecodeState::ReadingMessageLength;
             }
         }
         Ok(None)
     }
 
     /// Handles parsing the length prefix for the next Arrow IPC message.
-    #[inline]
     fn decode_message_length(
         &mut self,
-        buf: &[u8]
+        buf: &[u8],
     ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
-        let offset = self.get_message_offset();
+        let base_off = self.current_base_offset();
 
-        // Stream EOS detection: 0xFFFF_FFFF + 0x00000000
-        if self.format == IPCMessageProtocol::Stream && Self::has_eos_marker(buf) {
-            return Ok(Some(DecodeResult::Frame {
-                frame: ArrowIPCMessage {
-                    message: B::default(),
-                    body: B::default(),
-                },
-                consumed: offset + 8,
-            }));
+        // STREAM: handle EOS/marker at (base_off == 0)
+        if self.format == IPCMessageProtocol::Stream {
+            if buf.len() >= base_off + 8 && Self::has_eos_marker(&buf[base_off..]) {
+                return Ok(Some(DecodeResult::Frame {
+                    frame: ArrowIPCMessage { message: B::default(), body: B::default() },
+                    consumed: base_off + 8, // normally 8
+                }));
+            }
+
+            let has_marker = buf.len() >= base_off + 4
+                && Self::has_continuation_sentinel(&buf[base_off..]);
+
+            let len_off = base_off + if has_marker { 4 } else { 0 };
+            self.pending_prefix_len = if has_marker { 8 } else { 4 };
+
+            if buf.len() < len_off + METADATA_SIZE_PREFIX {
+                return Ok(Some(DecodeResult::NeedMore));
+            }
+
+            let msg_len =
+                Self::read_u32_le(&buf[len_off..len_off + METADATA_SIZE_PREFIX]) as usize;
+
+            // In stream mode, msg_len == 0 means EOS (with/without marker)
+            if msg_len == 0 {
+                return Ok(Some(DecodeResult::Frame {
+                    frame: ArrowIPCMessage { message: B::default(), body: B::default() },
+                    consumed: base_off + self.pending_prefix_len, // 4 or 8
+                }));
+            }
+
+            self.state = DecodeState::ReadingMessage { msg_len };
+            return Ok(None);
         }
 
-        if buf.len() < offset + METADATA_SIZE_PREFIX {
+        // FILE: read u32 length after (possibly) the 8-byte header on first frame
+        let len_off = base_off;
+        self.pending_prefix_len = METADATA_SIZE_PREFIX; // always 4 for FILE
+
+        if buf.len() < len_off + METADATA_SIZE_PREFIX {
             return Ok(Some(DecodeResult::NeedMore));
         }
-        let msg_len = Self::read_u32_le(&buf[offset..offset + METADATA_SIZE_PREFIX]) as usize;
 
-        if self.format == IPCMessageProtocol::File
-            && Self::has_file_footer_markers(buf, offset, msg_len)
-        {
-            let possible_footer_magic = &buf[offset + METADATA_SIZE_PREFIX + msg_len
-                ..offset + METADATA_SIZE_PREFIX + msg_len + FILE_OPENING_MAGIC_LEN];
-            if possible_footer_magic == ARROW_MAGIC_NUMBER {
+        let msg_len =
+            Self::read_u32_le(&buf[len_off..len_off + METADATA_SIZE_PREFIX]) as usize;
+
+        // Footer detection: after len+msg_len there must be trailing magic
+        if Self::has_file_footer_markers(buf, len_off, msg_len) {
+            let possible_magic = &buf[len_off + METADATA_SIZE_PREFIX + msg_len
+                ..len_off + METADATA_SIZE_PREFIX + msg_len + FILE_OPENING_MAGIC_LEN];
+            if possible_magic == ARROW_MAGIC_NUMBER {
                 self.state = DecodeState::ReadingFooter {
                     footer_len: msg_len,
-                    footer_offset: offset + METADATA_SIZE_PREFIX
+                    footer_offset: len_off + METADATA_SIZE_PREFIX,
                 };
                 return Ok(None);
             }
         }
 
         if msg_len == 0 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Zero-length message"));
+            // In FILE mode zero-length message is invalid (not an EOS sentinel).
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Zero-length message",
+            ));
         }
+
         self.state = DecodeState::ReadingMessage { msg_len };
         Ok(None)
     }
 
-    /// Ensures correct calculation of metadata and body alignment per Arrow IPC specification.
-    /// Handles decoding the Arrow FlatBuffers message, and sets up body parsing if required.
-    #[inline]
+    /// Decode the FB message and (if present) the body for the current frame.
     fn decode_message(
         &mut self,
         buf: &[u8],
-        msg_len: usize
+        msg_len: usize,
     ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
-        let offset = self.get_message_offset();
+        let base_off = self.current_base_offset();
+        let prefix = self.pending_prefix_len; // 4/8 stream, 4 file
 
-        let meta_start = offset + METADATA_SIZE_PREFIX;
+        let meta_start = base_off + prefix;
         let meta_end = meta_start + msg_len;
+
         if buf.len() < meta_end {
             return Ok(Some(DecodeResult::NeedMore));
         }
 
-        let metadata = &buf[meta_start..meta_end];
-        let message = B::from_slice(metadata);
+        let message = B::from_slice(&buf[meta_start..meta_end]);
 
+        // Parse FB message for body length
         use flatbuffers::root;
         use crate::AFMessage;
         let root = root::<AFMessage>(&message.as_ref()).map_err(|e| {
@@ -280,121 +304,116 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
         })?;
         let body_len = root.bodyLength() as usize;
 
+        let meta_pad = align_8(msg_len);
+        let body_start = meta_end + meta_pad;
+
         if body_len > 0 {
-            let body_start = meta_end;
             let body_end = body_start + body_len;
             if buf.len() < body_end {
-                self.state = DecodeState::ReadingBody {
-                    body_len,
-                    message: message,
-                };
+                // Need more to finish the body later; keep the message around.
+                self.state = DecodeState::ReadingBody { body_len, message };
                 return Ok(Some(DecodeResult::NeedMore));
             }
+
             let body = B::from_slice(&buf[body_start..body_end]);
-            let frame = ArrowIPCMessage::<B> { message, body };
+            let consumed = base_off + prefix + msg_len + meta_pad + body_len;
+
+            // Prepare for next frame
             self.state = DecodeState::ReadingMessageLength;
-            let consumed = (meta_start - offset) + msg_len + body_len;
-            return Ok(Some(DecodeResult::Frame { frame, consumed }));
+            self.pending_prefix_len = 0;
+
+            // First FILE frame accounts for 8-byte magic here
+            if self.file_magic_unconsumed && self.format == IPCMessageProtocol::File {
+                self.file_magic_unconsumed = false;
+            }
+
+            return Ok(Some(DecodeResult::Frame {
+                frame: ArrowIPCMessage { message, body },
+                consumed,
+            }));
         } else {
-            let consumed = offset + METADATA_SIZE_PREFIX + msg_len;
-            let frame = ArrowIPCMessage { message, body: B::default() };
+            // No body
+            let consumed = base_off + prefix + msg_len + meta_pad;
+
             self.state = DecodeState::ReadingMessageLength;
+            self.pending_prefix_len = 0;
+
+            if self.file_magic_unconsumed && self.format == IPCMessageProtocol::File {
+                self.file_magic_unconsumed = false;
+            }
+
+            let frame = ArrowIPCMessage {
+                message,
+                body: B::default(),
+            };
             return Ok(Some(DecodeResult::Frame { frame, consumed }));
         }
     }
-    
-    #[inline]
-    fn decode_continuation_size(
-        &mut self,
-        buf: &[u8]
-    ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
-        // Must have at least 8 bytes: 4 for marker, 4 for metadata size
-        if buf.len() < 8 {
-            return Ok(Some(DecodeResult::NeedMore));
-        }
-        // Validate marker is correct (0xFFFF_FFFF)
-        let marker = Self::read_u32_le(&buf[0..4]);
-        if marker != 0xFFFF_FFFF {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid Arrow stream continuation marker: expected 0xFFFF_FFFF, found 0x{:08X}", marker),
-            ));
-        }
-        // Read metadata size (little-endian u32 at offset 4)
-        let meta_size = Self::read_u32_le(&buf[4..8]) as usize;
-    
-        // If this is a stream EOS marker (meta_size == 0), treat as EOS elsewhere (decode_message_length or decode_initial)
-        if meta_size == 0 {
-            // The decode_message_length/initial logic will consume EOS, not here.
-            self.state = DecodeState::ReadingMessageLength;
-            return Ok(None);
-        }
-    
-        // After marker+length, parse the message of advertised length
-        self.state = DecodeState::ReadingMessage { msg_len: meta_size };
-        Ok(None)
-    }
-    
-    /// Handles extracting the Arrow body payload from the input buffer.
-    #[inline]
+
+    /// Continue reading the body if `decode_message` determined it wasn't fully available yet.
     fn decode_body(
         &mut self,
         buf: &[u8],
         body_len: usize,
-        message: B
+        message: B,
     ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
-        let offset = self.get_message_offset();
+        let base_off = self.current_base_offset();
+        let prefix = self.pending_prefix_len; // 4/8 stream, 4 file
+
         let meta_pad = align_8(message.len());
-        let meta_tot = match self.format {
-            IPCMessageProtocol::Stream => {
-                // STREAM: metadata follows marker, no extra size prefix
-                message.len() + meta_pad
-            }
-            IPCMessageProtocol::File => {
-                // FILE: 4-byte metadata size prefix before metadata
-                METADATA_SIZE_PREFIX + message.len() + meta_pad
-            }
-        };
-        let needed = offset + meta_tot + body_len;
+        let needed = base_off + prefix + message.len() + meta_pad + body_len;
+
         if buf.len() < needed {
             return Ok(Some(DecodeResult::NeedMore));
         }
-        let bstart = offset + meta_tot;
+
+        let bstart = base_off + prefix + message.len() + meta_pad;
         let bend = bstart + body_len;
         let body = B::from_slice(&buf[bstart..bend]);
-        let frame = ArrowIPCMessage::<B> { message, body };
+
         self.state = DecodeState::ReadingMessageLength;
-        Ok(Some(DecodeResult::Frame { frame, consumed: needed }))
+        self.pending_prefix_len = 0;
+
+        if self.file_magic_unconsumed && self.format == IPCMessageProtocol::File {
+            self.file_magic_unconsumed = false;
+        }
+
+        Ok(Some(DecodeResult::Frame {
+            frame: ArrowIPCMessage::<B> { message, body },
+            consumed: needed,
+        }))
     }
-    
+
     /// Handles decoding of file footer and trailing magic in Arrow File protocol.
-    /// Validates the footer size and Arrow magic, errors if footer is malformed or truncated.
     #[inline]
     fn decode_footer(
         &mut self,
         buf: &[u8],
         footer_len: usize,
-        footer_offset: usize
+        footer_offset: usize,
     ) -> io::Result<Option<DecodeResult<ArrowIPCMessage<B>>>> {
-        // Wait for at least enough for the footer data
+        // Wait for footer bytes
         if buf.len() < footer_offset + footer_len {
             return Ok(Some(DecodeResult::NeedMore));
         }
-        // Wait for enough for footer size (u32 LE) and trailing magic (6 or 8 bytes)
+        // Need the size (u32 LE) and trailing magic
         if buf.len() < footer_offset + footer_len + 4 + FILE_CLOSING_MAGIC_LEN {
             return Ok(Some(DecodeResult::NeedMore));
         }
+
         let size_offset = footer_offset + footer_len;
         let footer_size =
             u32::from_le_bytes(buf[size_offset..size_offset + 4].try_into().unwrap()) as usize;
+
         if footer_size != footer_len {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Arrow file footer size mismatch: expected {footer_len}, found {footer_size}"
-                )
+                ),
             ));
         }
+
         let magic = &buf[size_offset + 4..size_offset + 4 + FILE_CLOSING_MAGIC_LEN];
         if magic != ARROW_MAGIC_NUMBER {
             return Err(io::Error::new(
@@ -402,15 +421,13 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
                 "Invalid Arrow file trailing magic",
             ));
         }
-        // No more frames to follow: mark as Done
+
         self.state = DecodeState::Done;
         Ok(None)
     }
-
 }
 
 impl<B: StreamBuffer> Default for ArrowIPCFrameDecoder<B> {
-    /// Returns a decoder in stream protocol mode
     fn default() -> Self {
         ArrowIPCFrameDecoder::new(IPCMessageProtocol::Stream)
     }

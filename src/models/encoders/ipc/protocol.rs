@@ -121,7 +121,7 @@ impl IPCFrameEncoder {
         let cont_marker = &0xFFFF_FFFFu32.to_le_bytes();
         out.extend_from_slice(cont_marker);
         *global_offset += 4;
-        debug_println!("Continuation marker :\n{:?}", cont_marker);
+        //debug_println!("Continuation marker :\n{:?}", cont_marker);
 
         // We pad the metadata based on the whole stream length to date. This is help
         // ensure that the data buffer is correctly aligned, particularly for 64-byte
@@ -132,25 +132,25 @@ impl IPCFrameEncoder {
         let metadata_size = &(ipc_frame_meta.meta_len as u32 + ipc_frame_meta.meta_pad as u32).to_le_bytes();
         out.extend_from_slice(metadata_size);
         *global_offset += 4;
-        debug_println!("Metadata size :\n{:?}", metadata_size);
+        //debug_println!("Metadata size :\n{:?}", metadata_size);
 
         // Message metadata
         out.extend_from_slice(meta);
-        debug_println!("Msg:\n{:?}", meta.as_ref());
-        debug_println!("Msg_len:\n{:?}", meta.len());
+        //debug_println!("Msg:\n{:?}", meta.as_ref());
+        //debug_println!("Msg_len:\n{:?}", meta.len());
         *global_offset += meta.len();
 
         // Pad metadata
         if ipc_frame_meta.meta_pad != 0 {
             out.extend_from_slice(&vec![0u8; ipc_frame_meta.meta_pad ]);
-            debug_println!("Pad:\n{:?}", &vec![0u8; ipc_frame_meta.meta_pad]);
+            //debug_println!("Pad:\n{:?}", &vec![0u8; ipc_frame_meta.meta_pad]);
             *global_offset += ipc_frame_meta.meta_pad;
         }
 
         // Message body
         out.extend_from_slice(body);
-        debug_println!("Body:\n{:?}", body);
-        debug_println!("Body len:\n{:?}", body.len());
+        //debug_println!("Body:\n{:?}", body);
+        //debug_println!("Body len:\n{:?}", body.len());
         *global_offset += body.len();
 
         // This should not need to do anything because of `push_buffer` which
@@ -159,7 +159,7 @@ impl IPCFrameEncoder {
         
         if ipc_frame_meta.body_pad != 0 {
             out.extend_from_slice(&vec![0u8; ipc_frame_meta.body_pad]);
-            debug_println!("Body_pad:\n{:?}", &vec![0u8; ipc_frame_meta.body_pad]);
+            //debug_println!("Body_pad:\n{:?}", &vec![0u8; ipc_frame_meta.body_pad]);
             *global_offset += ipc_frame_meta.body_pad;
         }
     }

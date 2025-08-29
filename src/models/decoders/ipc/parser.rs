@@ -207,7 +207,20 @@ impl RecordBatchParser {
                         offsets,
                     ))))
                 }
-
+                #[cfg(feature = "datetime")]
+                ArrowType::Date32 => {
+                    let (slice, _) =
+                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
+                    let data = unsafe { Self::buffer_from_slice::<i32>(slice, field_len, &arc_opt) };
+                    Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray::new(data, null_mask))))
+                }
+                #[cfg(feature = "large_string")]
+                ArrowType::Date64 => {
+                    let (slice, _) =
+                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
+                    let data = unsafe { Self::buffer_from_slice::<i64>(slice, field_len, &arc_opt) };
+                    Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray::new(data, null_mask))))
+                }
                 // dictionary
                 ArrowType::Dictionary(idx_ty) => {
                     // TODO: isDelta check is done in the DictionaryBatch path,
@@ -613,6 +626,46 @@ pub(crate) fn handle_record_batch(
         )?;
 
         match &field.dtype {
+            #[cfg(feature = "extended_numeric_types")]
+            ArrowType::Int8 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<i8>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int8,
+                );
+            }
+            #[cfg(feature = "extended_numeric_types")]
+            ArrowType::UInt8 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<u8>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt8,
+                );
+            }
+            #[cfg(feature = "extended_numeric_types")]
+            ArrowType::Int16 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<i16>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int16,
+                );
+            }
+            #[cfg(feature = "extended_numeric_types")]
+            ArrowType::UInt16 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<u16>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt16,
+                );
+            }
             ArrowType::Int32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
                     &buffers, &mut buffer_idx, body, &field.name,
@@ -719,6 +772,24 @@ pub(crate) fn handle_record_batch(
                     .into(),
                 );
                 cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+            }
+            ArrowType::Date32 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<i32>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int32,
+                );
+            }
+            ArrowType::Date64 => {
+                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
+                push_numeric_col::<i64>(
+                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int64,
+                );
             }
             ArrowType::Dictionary(idx_ty) => {
                 let dict_key = col_idx as i64;
@@ -897,6 +968,14 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
                 .type__as_int()
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Int type"))?;
             match (i.bitWidth(), i.is_signed()) {
+                #[cfg(feature = "extended_numeric_types")]
+                (8,  true)  => Ok(ArrowType::Int8),
+                #[cfg(feature = "extended_numeric_types")]
+                (8,  false) => Ok(ArrowType::UInt8),
+                #[cfg(feature = "extended_numeric_types")]
+                (16, true)  => Ok(ArrowType::Int16),
+                #[cfg(feature = "extended_numeric_types")]
+                (16, false) => Ok(ArrowType::UInt16),
                 (32, true) => Ok(ArrowType::Int32),
                 (64, true) => Ok(ArrowType::Int64),
                 (32, false) => Ok(ArrowType::UInt32),
@@ -914,6 +993,20 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
                 fb::Precision::SINGLE => Ok(ArrowType::Float32),
                 fb::Precision::DOUBLE => Ok(ArrowType::Float64),
                 _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported float precision"))
+            }
+        }
+        #[cfg(feature = "datetime")]
+        fb::Type::Date => {
+            let d = fb_field
+                .type__as_date()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Date type"))?;
+            match d.unit() {
+                fb::DateUnit::DAY => Ok(ArrowType::Date32),
+                fb::DateUnit::MILLISECOND => Ok(ArrowType::Date64),
+                other => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("unsupported Date unit {:?}", other),
+                )),
             }
         }
         fb::Type::Bool => Ok(ArrowType::Boolean),
@@ -1094,6 +1187,14 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
         fbf::Type::Int => {
             let i = fbf_field.type__as_int().unwrap();
             match (i.bitWidth(), i.is_signed()) {
+                #[cfg(feature = "extended_numeric_types")]
+                (8,  true)  => ArrowType::Int8,
+                #[cfg(feature = "extended_numeric_types")]
+                (8,  false) => ArrowType::UInt8,
+                #[cfg(feature = "extended_numeric_types")]
+                (16, true)  => ArrowType::Int16,
+                #[cfg(feature = "extended_numeric_types")]
+                (16, false) => ArrowType::UInt16,
                 (32, true)  => ArrowType::Int32,
                 (64, true)  => ArrowType::Int64,
                 (32, false) => ArrowType::UInt32,
@@ -1114,6 +1215,22 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
         #[cfg(feature = "large_string")]
         fbf::Type::Utf8   => ArrowType::LargeString,
         fbf::Type::Bool        => ArrowType::Boolean,
+        #[cfg(feature = "datetime")]
+        fbf::Type::Date => {
+            let d = fbf_field.type__as_date().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "missing Date type")
+            })?;
+            match d.unit() {
+                fbf::DateUnit::DAY => ArrowType::Date32,
+                fbf::DateUnit::MILLISECOND => ArrowType::Date64,
+                other => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("unsupported Date unit {:?}", other),
+                    ))
+                }
+            }
+        }
         other => {
             // dictionary?
             if let Some(dict) = fbf_field.dictionary() {

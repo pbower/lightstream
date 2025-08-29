@@ -38,12 +38,12 @@ impl FileTableReader {
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         let len = buf.len();
-        debug_println!("File len: {}", len);
+        //debug_println!("File len: {}", len);
 
-        for i in 0..len {
-            print!("{:02X} ", buf[i]);
-            if i % 16 == 15 { println!(); }
-        }
+        // for i in 0..len {
+        //     print!("{:02X} ", buf[i]);
+        //     if i % 16 == 15 { println!(); }
+        // }
 
         if len < 12 {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "file too small for Arrow"));

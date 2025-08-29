@@ -261,7 +261,7 @@ where
         };
 
         let (encoded, ipc_frame_metadata) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame).expect("IPC frame encoding failed");
-        debug_assert!(encoded.len() == ipc_frame_metadata.frame_len().try_into().unwrap());
+        debug_assert!(encoded.len() == ipc_frame_metadata.frame_len());
         if self.protocol == IPCMessageProtocol::File {
             // For file track buffer, track offset and block metadata
             let block = FooterBlockMeta {

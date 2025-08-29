@@ -342,29 +342,29 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
             float32_col(),
             float64_col(),
             bool_col(),
-            string32_col(),
+            //string32_col(),
             //dict32_col(),
         ];
-        #[cfg(feature = "datetime")]
-        {
-            cols.push(dt32_col());
-            cols.push(dt64_col());
-        }
-        #[cfg(feature = "large_string")]
-        cols.push(string64_col());
-        #[cfg(feature = "extended_categorical")]
-        {
-            cols.push(dict8_col());
-            cols.push(dict16_col());
-            cols.push(dict64_col());
-        }
-        #[cfg(feature = "extended_numeric_types")]
-        {
-            cols.push(int8_col());
-            cols.push(int16_col());
-            cols.push(uint8_col());
-            cols.push(uint16_col());
-        }
+        // #[cfg(feature = "datetime")]
+        // {
+        //     cols.push(dt32_col());
+        //     cols.push(dt64_col());
+        // }
+        // #[cfg(feature = "large_string")]
+        // cols.push(string64_col());
+        // #[cfg(feature = "extended_categorical")]
+        // {
+        //     cols.push(dict8_col());
+        //     cols.push(dict16_col());
+        //     cols.push(dict64_col());
+        // }
+        // #[cfg(feature = "extended_numeric_types")]
+        // {
+        //     cols.push(int8_col());
+        //     cols.push(int16_col());
+        //     cols.push(uint8_col());
+        //     cols.push(uint16_col());
+        // }
         Table {
             cols,
             n_rows: 4,

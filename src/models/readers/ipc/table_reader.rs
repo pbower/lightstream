@@ -230,6 +230,10 @@ mod tests {
     async fn test_read_all_tables() {
         let table = make_all_types_table();
         let schema = make_schema_all_types();
+        println!("Table:");
+        println!("{}", table);
+        println!("Schema:");
+        println!("{:?}", schema);
         let mut writer =
             TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         register_dictionaries_for_table(&mut writer, &table);
