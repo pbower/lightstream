@@ -6,9 +6,8 @@
 //! See CsvDecodeOptions for configuration.
 
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader};
 use std::path::Path;
-use std::sync::Arc;
 use minarrow::{Table, Field};
 use crate::models::decoders::csv::{CsvDecodeOptions, decode_csv};
 

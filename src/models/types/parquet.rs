@@ -247,11 +247,11 @@ pub (crate) fn arrow_type_to_parquet(
             },
         ArrowType::Null => Err(IoError::UnsupportedType("Null type is not supported".into())),
         #[cfg(feature = "datetime")]
-        ArrowType::Duration32(time_unit) => panic!("Duration does not map to a parquet type."),
+        ArrowType::Duration32(_) => panic!("Duration does not map to a parquet type."),
         #[cfg(feature = "datetime")]
-        ArrowType::Duration64(time_unit) => panic!("Duration does not map to a parquet type."),
+        ArrowType::Duration64(_) => panic!("Duration does not map to a parquet type."),
         #[cfg(feature = "datetime")]
-        ArrowType::Interval(interval_unit) => panic!("Interval does not map to a parquet type."),
+        ArrowType::Interval(_) => panic!("Interval does not map to a parquet type."),
         &minarrow::ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt8) | 
         &minarrow::ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt16) | 
         &minarrow::ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt64) => panic!()

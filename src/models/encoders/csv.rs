@@ -355,7 +355,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::test_helpers;
 
     fn make_test_table() -> Table {
         let int_col = FieldArray {

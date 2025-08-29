@@ -5,9 +5,10 @@ use minarrow::{
     IntegerArray, NumericArray, Table, TextArray, Vec64
 };
 #[cfg(feature = "datetime")]
-use minarrow::{DatetimeArray, TemporalArray};
+use minarrow::{DatetimeArray, TemporalArray, TimeUnit};
 use tempfile::NamedTempFile;
 use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+use minarrow::StringArray;
 
 use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_writer::write_tables_to_stream, table_writer::write_tables_to_file}};
 
@@ -160,6 +161,7 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
 
     #[cfg(feature = "datetime")]
     pub (crate) fn dt32_col() -> FieldArray {
+
         FieldArray::new(
             Field {
                 name: "dt32".into(),
@@ -167,10 +169,10 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
                 nullable: false,
                 metadata: Default::default()
             },
-            Array::TemporalArray(TemporalArray::Datetime32(Arc::new(minarrow::DatetimeArray {
+            Array::TemporalArray(TemporalArray::Datetime32(Arc::new(DatetimeArray {
                 data: Buffer::from(Vec64::from_slice(&[111, 222, 333, 444])),
                 null_mask: None,
-                time_unit: minarrow::TimeUnit::Days,
+                time_unit: TimeUnit::Days,
             })))
         )
     }
@@ -184,16 +186,17 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
                 nullable: false,
                 metadata: Default::default()
             },
-            Array::TemporalArray(TemporalArray::Datetime64(Arc::new(minarrow::DatetimeArray {
+            Array::TemporalArray(TemporalArray::Datetime64(Arc::new(DatetimeArray {
                 data: Buffer::from(Vec64::from_slice(&[1111111, 2222222, 3333333, 4444444])),
                 null_mask: None,
-                time_unit: minarrow::TimeUnit::Days,
+                time_unit: TimeUnit::Days,
             })))
         )
     }
 
     #[cfg(feature = "large_string")]
     pub (crate) fn string64_col() -> FieldArray {
+
         FieldArray::new(
             Field {
                 name: "string64".into(),
@@ -201,7 +204,7 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
                 nullable: true,
                 metadata: Default::default()
             },
-            Array::TextArray(TextArray::String64(Arc::new(minarrow::StringArray::new(
+            Array::TextArray(TextArray::String64(Arc::new(StringArray::new(
                 Buffer::from(Vec64::from_slice("bigbigstringlarge".as_bytes())),
                 Some(Bitmask::new_set_all(4, true)),
                 Buffer::from(Vec64::from_slice(&[0u64, 5, 11, 16, 17]))
@@ -392,11 +395,12 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
     
 
 
-/// Helper: Write tables to an in-memory async stream, then collect and chunk the result.
+/// Write tables to an in-memory async stream, then collect and chunk the result.
 /// - tables: borrowed slice, not moved or cloned
 /// - schema: borrowed slice
 /// - protocol: file/stream
 /// - chunk_size: number of bytes per simulated stream chunk
+#[allow(dead_code)]
 pub async fn write_test_table_to_ipc_stream(
     tables: &[Table],
     schema: &[Field],

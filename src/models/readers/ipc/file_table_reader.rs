@@ -9,7 +9,6 @@ use minarrow::{Field, SuperTable, Table};
 use crate::arrow::file::org::apache::arrow::flatbuf as fbf;
 use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::ARROW_MAGIC_NUMBER;
-use crate::debug_println;
 use crate::models::decoders::ipc::parser::{
     RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch, handle_record_batch_shared
 };
@@ -290,12 +289,6 @@ mod tests {
     
     #[tokio::test]
     async fn test_shared_buffers_with_aligned_data() {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
-        
-        // Create a minimal Arrow file with 64-byte aligned buffers
-        // This is a hand-crafted file to ensure alignment
-        let mut temp = NamedTempFile::new().unwrap();
         
         // Arrow file structure:
         // 1. Magic "ARROW1\0\0"

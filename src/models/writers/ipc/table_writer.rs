@@ -6,7 +6,6 @@ use tokio::fs::File;
 use minarrow::{Field, Table};
 use tokio::io::AsyncWrite;
 use crate::models::sinks::table_sink::GTableSink;
-use crate::traits::stream_buffer::StreamBuffer;
 use crate::utils::extract_dictionary_values_from_col;
 use crate::{enums::IPCMessageProtocol};
 use futures_util::sink::SinkExt;

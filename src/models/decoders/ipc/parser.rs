@@ -779,46 +779,6 @@ pub(crate) fn handle_record_batch(
                     &mut cols, field, data_slice, null_mask.clone(), NumericArray::Float64,
                 );
             }
-            #[cfg(feature = "extended_numeric_types")]
-            ArrowType::Int8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
-                )?;
-                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col::<i8>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int8,
-                );
-            }
-            #[cfg(feature = "extended_numeric_types")]
-            ArrowType::Int16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
-                )?;
-                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col::<i16>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int16,
-                );
-            }
-            #[cfg(feature = "extended_numeric_types")]
-            ArrowType::UInt8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
-                )?;
-                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col::<u8>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt8,
-                );
-            }
-            #[cfg(feature = "extended_numeric_types")]
-            ArrowType::UInt16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
-                )?;
-                check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col::<u16>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt16,
-                );
-            }
             ArrowType::Boolean => {
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
                     &buffers, &mut buffer_idx, body, &field.name,

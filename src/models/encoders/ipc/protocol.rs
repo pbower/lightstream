@@ -3,7 +3,6 @@ use std::io;
 use crate::constants::{
     ARROW_MAGIC_NUMBER, ARROW_MAGIC_NUMBER_PADDED, CONTINUATION_MARKER_LEN, DEFAULT_FRAME_ALLOCATION_SIZE, EOS_MARKER_LEN, METADATA_SIZE_PREFIX
 };
-use crate::debug_println;
 use crate::enums::IPCMessageProtocol;
 use crate::models::frames::ipc_message::IPCFrameMetadata;
 use crate::traits::frame_encoder::FrameEncoder;
