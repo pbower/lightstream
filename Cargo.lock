@@ -200,6 +200,8 @@ dependencies = [
 [[package]]
 name = "minarrow"
 version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "28534ac0b97a2008eb7edcce33a4ff3b6c0720bd2610c2ce44439e2c5d80146a"
 dependencies = [
  "num-traits",
 ]

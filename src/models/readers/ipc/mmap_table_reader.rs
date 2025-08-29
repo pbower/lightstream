@@ -11,7 +11,7 @@ use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::ARROW_MAGIC_NUMBER;
 use crate::debug_println;
 use crate::models::decoders::ipc::parser::{
-    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch, handle_record_batch_mmap
+    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch, handle_record_batch_shared
 };
 use crate::models::mmap::MemMap;
 
@@ -194,8 +194,8 @@ impl MmapTableReader {
             io::Error::new(io::ErrorKind::InvalidData, "expected RecordBatch header")
         })?;
         
-        // Use specialized mmap handler for zero-copy
-        handle_record_batch_mmap(
+        // Use shared handler that now supports both Arc<[u8]> and mmap zero-copy
+        handle_record_batch_shared(
             &rec,
             &self.schema.iter().map(|a| a.as_ref().clone()).collect::<Vec<_>>(),
             &self.dictionaries,

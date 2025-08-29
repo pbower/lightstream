@@ -999,14 +999,17 @@ pub(crate) fn handle_record_batch(
 
 /// Variant of `handle_record_batch` that creates shared (Arc) buffers for zero-copy.
 /// Used when reading from files where data is already in an Arc<[u8]>.
-pub(crate) fn handle_record_batch_shared(
+pub(crate) fn handle_record_batch_shared<M: ?Sized>(
     rec: &fb::RecordBatch,
     fields: &[Field],
     dicts: &HashMap<i64, Vec<String>>,
-    arc_data: Arc<[u8]>,
+    arc_data: Arc<M>,
     body_offset: usize,
     body_len: usize,
-) -> io::Result<Table> {
+) -> io::Result<Table> 
+where
+    M: AsRef<[u8]> + Send + Sync + 'static,
+{
     let nodes =
         rec.nodes().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no nodes"))?;
     let buffers =
@@ -1014,7 +1017,8 @@ pub(crate) fn handle_record_batch_shared(
     let mut buffer_idx = 0;
     let mut cols = Vec::with_capacity(fields.len());
     let n_rows = nodes.get(0).length() as usize;
-    let body = &arc_data[body_offset..body_offset + body_len];
+    let full_data = arc_data.as_ref().as_ref();
+    let body = &full_data[body_offset..body_offset + body_len];
 
     for (col_idx, field) in fields.iter().enumerate() {
         eprintln!("DEBUG handle_record_batch_shared: Processing field {} ({}), type {:?}", col_idx, field.name, field.dtype);
@@ -1037,7 +1041,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i8>(
+                push_numeric_col_shared::<i8, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int8, &arc_data, body_offset,
                 );
@@ -1048,7 +1052,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<u8>(
+                push_numeric_col_shared::<u8, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::UInt8, &arc_data, body_offset,
                 );
@@ -1059,7 +1063,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i16>(
+                push_numeric_col_shared::<i16, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int16, &arc_data, body_offset,
                 );
@@ -1070,7 +1074,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<u16>(
+                push_numeric_col_shared::<u16, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::UInt16, &arc_data, body_offset,
                 );
@@ -1080,7 +1084,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i32>(
+                push_numeric_col_shared::<i32, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int32, &arc_data, body_offset,
                 );
@@ -1090,7 +1094,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<u32>(
+                push_numeric_col_shared::<u32, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::UInt32, &arc_data, body_offset,
                 );
@@ -1100,7 +1104,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i64>(
+                push_numeric_col_shared::<i64, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int64, &arc_data, body_offset,
                 );
@@ -1110,7 +1114,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<u64>(
+                push_numeric_col_shared::<u64, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::UInt64, &arc_data, body_offset,
                 );
@@ -1120,7 +1124,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_float_col_shared::<f32>(
+                push_float_col_shared::<f32, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Float32, &arc_data, body_offset,
                 );
@@ -1130,7 +1134,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_float_col_shared::<f64>(
+                push_float_col_shared::<f64, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Float64, &arc_data, body_offset,
                 );
@@ -1140,7 +1144,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i32>(
+                push_numeric_col_shared::<i32, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int32, &arc_data, body_offset,
                 );
@@ -1150,7 +1154,7 @@ pub(crate) fn handle_record_batch_shared(
                     &buffers, &mut buffer_idx, body, &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
-                push_numeric_col_shared::<i64>(
+                push_numeric_col_shared::<i64, M>(
                     &mut cols, field, data_slice, data_off, null_mask.clone(), 
                     NumericArray::Int64, &arc_data, body_offset,
                 );
@@ -1187,24 +1191,46 @@ pub(crate) fn handle_record_batch_shared(
                     offs_offset, offs_slice.len(), data_offset, data_slice.len(), body.len(),
                 )?;
                 
-                // Create shared buffers for string data and offsets
-                let data_absolute_offset = body_offset + data_offset;
-                let data_ptr = arc_data[data_absolute_offset..].as_ptr();
-                let data_buf = unsafe {
-                    minarrow::Buffer::from_shared_raw(arc_data.clone(), data_ptr, data_slice.len())
+                // Create shared buffers for string data using SharedBuffer
+                use minarrow::structs::shared_buffer::SharedBuffer;
+                
+                struct SliceWrapper<M: ?Sized> {
+                    _owner: Arc<M>,
+                    offset: usize,
+                    len: usize,
+                }
+                
+                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+                    fn as_ref(&self) -> &[u8] {
+                        let full = self._owner.as_ref();
+                        let slice = full.as_ref();
+                        &slice[self.offset..self.offset + self.len]
+                    }
+                }
+                
+                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+                
+                let data_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + data_offset,
+                    len: data_slice.len(),
                 };
+                let data_shared = SharedBuffer::from_owner(data_wrapper);
+                let data_buf = minarrow::Buffer::from_shared(data_shared);
                 
                 #[cfg(feature = "large_string")]
                 {
                     // Check if this is actually u32 offset data misidentified as LargeString
                     if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
                         // Likely u32 offsets, parse as String32 instead
-                        let offs_absolute_offset = body_offset + offs_offset;
-                        let offs_ptr = arc_data[offs_absolute_offset..].as_ptr() as *const u32;
-                        let offs_len = offs_slice.len() / std::mem::size_of::<u32>();
-                        let offs_buf = unsafe {
-                            minarrow::Buffer::from_shared_raw(arc_data.clone(), offs_ptr, offs_len)
+                        let offs_wrapper = SliceWrapper {
+                            _owner: arc_data.clone(),
+                            offset: body_offset + offs_offset,
+                            len: offs_slice.len(),
                         };
+                        let offs_shared = SharedBuffer::from_owner(offs_wrapper);
+                        let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
                         
                         let arr = TextArray::String32(
                             StringArray::new(data_buf, null_mask, offs_buf).into()
@@ -1212,12 +1238,13 @@ pub(crate) fn handle_record_batch_shared(
                         cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                     } else {
                         // Actual u64 offsets
-                        let offs_absolute_offset = body_offset + offs_offset;
-                        let offs_ptr = arc_data[offs_absolute_offset..].as_ptr() as *const u64;
-                        let offs_len = offs_slice.len() / std::mem::size_of::<u64>();
-                        let offs_buf = unsafe {
-                            minarrow::Buffer::from_shared_raw(arc_data.clone(), offs_ptr, offs_len)
+                        let offs_wrapper = SliceWrapper {
+                            _owner: arc_data.clone(),
+                            offset: body_offset + offs_offset,
+                            len: offs_slice.len(),
                         };
+                        let offs_shared = SharedBuffer::from_owner(offs_wrapper);
+                        let offs_buf: minarrow::Buffer<u64> = minarrow::Buffer::from_shared(offs_shared);
                         
                         let arr = TextArray::String64(
                             StringArray::new(data_buf, null_mask, offs_buf).into()
@@ -1227,12 +1254,13 @@ pub(crate) fn handle_record_batch_shared(
                 }
                 #[cfg(not(feature = "large_string"))]
                 {
-                    let offs_absolute_offset = body_offset + offs_offset;
-                    let offs_ptr = arc_data[offs_absolute_offset..].as_ptr() as *const u32;
-                    let offs_len = offs_slice.len() / std::mem::size_of::<u32>();
-                    let offs_buf = unsafe {
-                        minarrow::Buffer::from_shared_raw(arc_data.clone(), offs_ptr, offs_len)
+                    let offs_wrapper = SliceWrapper {
+                        _owner: arc_data.clone(),
+                        offset: body_offset + offs_offset,
+                        len: offs_slice.len(),
                     };
+                    let offs_shared = SharedBuffer::from_owner(offs_wrapper);
+                    let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
                     
                     let arr = TextArray::String32(
                         StringArray::new(data_buf, null_mask, offs_buf).into()
@@ -1557,29 +1585,53 @@ fn push_numeric_col<T>(
     cols.push(FieldArray::new(field.clone(), Array::NumericArray(make_array(arr))));
 }
 
-/// Shared buffer version of push_numeric_col for zero-copy from Arc<[u8]>
-/// If the data is 64-byte aligned, creates a shared buffer. Otherwise clones.
+/// Shared buffer version of push_numeric_col for zero-copy from Arc<M>
+/// Creates truly zero-copy buffers when data is 64-byte aligned.
 #[inline(always)]
-fn push_numeric_col_shared<T>(
+fn push_numeric_col_shared<T, M: ?Sized>(
     cols: &mut Vec<FieldArray>,
     field: &Field,
     data_slice: &[u8],
     data_offset: usize,
     null_mask: Option<Bitmask>,
     make_array: fn(Arc<IntegerArray<T>>) -> NumericArray,
-    arc_data: &Arc<[u8]>,
+    arc_data: &Arc<M>,
     body_offset: usize,
 ) where
     T: Copy,
+    M: AsRef<[u8]> + Send + Sync + 'static,
 {
-    let absolute_offset = body_offset + data_offset;
-    let ptr = arc_data[absolute_offset..].as_ptr() as *const T;
-    let len = data_slice.len() / std::mem::size_of::<T>();
+    use minarrow::structs::shared_buffer::SharedBuffer;
     
-    // Buffer::from_shared_raw will check alignment and clone if needed
-    let data = unsafe {
-        minarrow::Buffer::from_shared_raw(arc_data.clone(), ptr, len)
+    // Create a wrapper that references the slice we need
+    struct SliceWrapper<M: ?Sized> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+    
+    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = self._owner.as_ref();
+            let slice = full.as_ref();
+            &slice[self.offset..self.offset + self.len]
+        }
+    }
+    
+    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+    
+    let absolute_offset = body_offset + data_offset;
+    let byte_len = data_slice.len();
+    
+    let wrapper = SliceWrapper {
+        _owner: arc_data.clone(),
+        offset: absolute_offset,
+        len: byte_len,
     };
+    
+    let shared = SharedBuffer::from_owner(wrapper);
+    let data = minarrow::Buffer::from_shared(shared);
     
     let arr = Arc::new(IntegerArray {
         data,
@@ -1612,26 +1664,49 @@ fn push_float_col<T>(
 /// Shared buffer version of push_float_col for zero-copy from Arc<[u8]>
 /// If the data is 64-byte aligned, creates a shared buffer. Otherwise clones.
 #[inline(always)]
-fn push_float_col_shared<T>(
+fn push_float_col_shared<T, M: ?Sized>(
     cols: &mut Vec<FieldArray>,
     field: &Field,
     data_slice: &[u8],
     data_offset: usize,
     null_mask: Option<Bitmask>,
     make_array: fn(Arc<FloatArray<T>>) -> NumericArray,
-    arc_data: &Arc<[u8]>,
+    arc_data: &Arc<M>,
     body_offset: usize,
 ) where
     T: Copy,
+    M: AsRef<[u8]> + Send + Sync + 'static,
 {
-    let absolute_offset = body_offset + data_offset;
-    let ptr = arc_data[absolute_offset..].as_ptr() as *const T;
-    let len = data_slice.len() / std::mem::size_of::<T>();
+    use minarrow::structs::shared_buffer::SharedBuffer;
     
-    // Buffer::from_shared_raw will check alignment and clone if needed
-    let data = unsafe {
-        minarrow::Buffer::from_shared_raw(arc_data.clone(), ptr, len)
+    struct SliceWrapper<M: ?Sized> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+    
+    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = self._owner.as_ref();
+            let slice = full.as_ref();
+            &slice[self.offset..self.offset + self.len]
+        }
+    }
+    
+    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+    
+    let absolute_offset = body_offset + data_offset;
+    let byte_len = data_slice.len();
+    
+    let wrapper = SliceWrapper {
+        _owner: arc_data.clone(),
+        offset: absolute_offset,
+        len: byte_len,
     };
+    
+    let shared = SharedBuffer::from_owner(wrapper);
+    let data = minarrow::Buffer::from_shared(shared);
     
     let arr = Arc::new(FloatArray {
         data,
@@ -1801,67 +1876,4 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
     Ok(Field { name, dtype: base_type, nullable, metadata })
 }
 
-/// Creates a zero-copy buffer from mmap memory.
-/// Uses SharedBuffer::from_owner with a slice wrapper to avoid copying.
-fn create_mmap_buffer<T, M>(
-    mmap_region: &Arc<M>,
-    offset: usize,
-    len: usize,
-) -> minarrow::Buffer<T>
-where
-    T: Copy,
-    M: AsRef<[u8]> + Send + Sync + 'static,
-{
-    use minarrow::structs::shared_buffer::SharedBuffer;
-    
-    // Create a wrapper that holds a slice of the mmap
-    struct SliceWrapper<M> {
-        _owner: Arc<M>,
-        offset: usize,
-        len: usize,
-    }
-    
-    impl<M: AsRef<[u8]>> AsRef<[u8]> for SliceWrapper<M> {
-        fn as_ref(&self) -> &[u8] {
-            let full = (*self._owner).as_ref();
-            &full[self.offset..self.offset + self.len]
-        }
-    }
-    
-    let wrapper = SliceWrapper {
-        _owner: mmap_region.clone(),
-        offset,
-        len: len * std::mem::size_of::<T>(),
-    };
-    
-    // Create SharedBuffer from the wrapper - this is zero-copy!
-    let shared = SharedBuffer::from_owner(wrapper);
-    
-    // Create Buffer from SharedBuffer - zero-copy when aligned!
-    minarrow::Buffer::from_shared(shared)
-}
 
-/// Handle record batch for mmap.
-pub fn handle_record_batch_mmap<M>(
-    batch: &fb::RecordBatch,
-    fields: &[Field],
-    dictionaries: &std::collections::HashMap<i64, Vec<String>>,
-    mmap_region: Arc<M>,
-    body_offset: usize,
-    body_len: usize,
-) -> io::Result<Table>
-where
-    M: AsRef<[u8]> + Send + Sync + 'static,
-{
-    let data = (*mmap_region).as_ref();
-    let arc_data: Arc<[u8]> = Arc::from(data);
-    
-    handle_record_batch_shared(
-        batch,
-        fields,
-        dictionaries,
-        arc_data,
-        body_offset,
-        body_len
-    )
-}
