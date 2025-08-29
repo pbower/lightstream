@@ -242,7 +242,8 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
             }
         };
 
-        let null_count = null_mask.iter().filter(|x| **x).count();
+        // Count false values in null_mask (false = null, true = valid)
+        let null_count = null_mask.iter().filter(|x| !**x).count();
 
         cols.push(FieldArray {
             field: Arc::new(field.clone()),

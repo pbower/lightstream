@@ -352,12 +352,12 @@ use crate::{enums::IPCMessageProtocol, models::writers::ipc::{table_stream_write
         }
         #[cfg(feature = "large_string")]
         cols.push(string64_col());
-        // #[cfg(feature = "extended_categorical")]
-        // {
-        //     cols.push(dict8_col());
-        //     cols.push(dict16_col());
-        //     cols.push(dict64_col());
-        // }
+        #[cfg(feature = "extended_categorical")]
+        {
+            cols.push(dict8_col());
+            cols.push(dict16_col());
+            cols.push(dict64_col());
+        }
         #[cfg(feature = "extended_numeric_types")]
         {
             cols.push(int8_col());

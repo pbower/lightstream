@@ -1082,7 +1082,11 @@ mod tests {
     #[test]
     fn decode_column_plain_int32() {
         let values = [10i32, 20, -5];
-        let buf = Vec::new();
+        // Encode the values as PLAIN (little-endian bytes)
+        let mut buf = Vec::new();
+        for v in &values {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
 
         let def_levels = vec![true; values.len()];
         let array = decode_column(

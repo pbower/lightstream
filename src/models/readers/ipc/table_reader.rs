@@ -177,7 +177,6 @@ mod tests {
     use crate::enums::IPCMessageProtocol;
     use futures_core::Stream;
     use minarrow::{SuperTable, Table};
-    use std::collections::VecDeque;
     use std::io;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -196,20 +195,29 @@ mod tests {
     }
 
     /// A helper that implements both `Stream<Item=io::Result<Vec<u8>>>` and `AsyncRead`
-    /// by splitting out the raw bytes (for AsyncRead) and the same frames for the Stream.
+    /// by using the DuplexStream reader for both interfaces.
     struct Combined {
-        frames: VecDeque<Vec<u8>>,
         reader: tokio::io::DuplexStream,
     }
 
     impl Stream for Combined {
         type Item = io::Result<Vec<u8>>;
-        fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let this = self.get_mut();
-            if let Some(chunk) = this.frames.pop_front() {
-                Poll::Ready(Some(Ok(chunk)))
-            } else {
-                Poll::Ready(None)
+            let mut buf = vec![0u8; 8192];
+            let mut read_buf = ReadBuf::new(&mut buf);
+            match Pin::new(&mut this.reader).poll_read(cx, &mut read_buf) {
+                Poll::Ready(Ok(())) => {
+                    let n = read_buf.filled().len();
+                    if n == 0 {
+                        Poll::Ready(None)
+                    } else {
+                        buf.truncate(n);
+                        Poll::Ready(Some(Ok(buf)))
+                    }
+                }
+                Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+                Poll::Pending => Poll::Pending,
             }
         }
     }
@@ -249,7 +257,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 
@@ -283,7 +290,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 
@@ -311,7 +317,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 
@@ -344,7 +349,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 
@@ -386,7 +390,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 
@@ -415,7 +418,6 @@ mod tests {
         drop(tx);
 
         let combined = Combined {
-            frames: VecDeque::from(frames),
             reader: rx,
         };
 

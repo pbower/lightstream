@@ -210,11 +210,13 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
 
         // STREAM: handle EOS/marker at (base_off == 0)
         if self.format == IPCMessageProtocol::Stream {
-            if buf.len() >= base_off + 8 && Self::has_eos_marker(&buf[base_off..]) {
-                return Ok(Some(DecodeResult::Frame {
-                    frame: ArrowIPCMessage { message: B::default(), body: B::default() },
-                    consumed: base_off + 8, // normally 8
-                }));
+            if buf.len() >= base_off + 8 {
+                if Self::has_eos_marker(&buf[base_off..]) {
+                    return Ok(Some(DecodeResult::Frame {
+                        frame: ArrowIPCMessage { message: B::default(), body: B::default() },
+                        consumed: base_off + 8, // normally 8
+                    }));
+                }
             }
 
             let has_marker = buf.len() >= base_off + 4
@@ -316,7 +318,10 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
             }
 
             let body = B::from_slice(&buf[body_start..body_end]);
-            let consumed = base_off + prefix + msg_len + meta_pad + body_len;
+            // Account for body padding to maintain 8-byte alignment
+            let consumed_before_body_pad = base_off + prefix + msg_len + meta_pad + body_len;
+            let body_pad = align_8(consumed_before_body_pad);
+            let consumed = consumed_before_body_pad + body_pad;
 
             // Prepare for next frame
             self.state = DecodeState::ReadingMessageLength;
@@ -378,9 +383,13 @@ impl<B: StreamBuffer> ArrowIPCFrameDecoder<B> {
             self.file_magic_unconsumed = false;
         }
 
+        // Account for body padding
+        let body_pad = align_8(needed);
+        let consumed = needed + body_pad;
+
         Ok(Some(DecodeResult::Frame {
             frame: ArrowIPCMessage::<B> { message, body },
-            consumed: needed,
+            consumed,
         }))
     }
 

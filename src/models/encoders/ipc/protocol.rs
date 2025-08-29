@@ -229,12 +229,16 @@ mod tests {
         // Verify metadata
         assert_eq!(metadata.header_len, 8);
         assert_eq!(metadata.meta_len, 120);
-        assert_eq!(metadata.meta_pad, 56); // pads whole 'out to date' up to body
+        // After header (8) + meta (120) = 128 bytes total
+        // 128 % 64 = 0, so no padding needed for 64-byte alignment
+        assert_eq!(metadata.meta_pad, 0); // No padding needed when already aligned
         assert_eq!(metadata.body_len, 16);
-        assert_eq!(metadata.body_pad, 48); // pads to 64 bytes
+        // After header (8) + meta (120) + body (16) = 144 bytes
+        // 144 % 64 = 16, so need 48 bytes padding to reach 192
+        assert_eq!(metadata.body_pad, 48); // pads to next 64-byte boundary
 
-        // Total frame size
-        assert_eq!(out.0.len(), 8 + 120 + 56 + 48 + 16); // header + meta + pad + body
+        // Total frame size: header (8) + meta (120) + meta_pad (0) + body (16) + body_pad (48)
+        assert_eq!(out.0.len(), 8 + 120 + 0 + 16 + 48); // = 192
         assert_eq!(out.0.len(), metadata.frame_len());
     }
 
