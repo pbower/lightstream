@@ -9,6 +9,12 @@ pub struct MemMap<const ALIGN: usize> {
     pub len: usize
 }
 
+// SAFETY: MemMap is safe to send between threads because the mmap is read-only
+unsafe impl<const ALIGN: usize> Send for MemMap<ALIGN> {}
+
+// SAFETY: MemMap is safe to share between threads because the mmap is read-only
+unsafe impl<const ALIGN: usize> Sync for MemMap<ALIGN> {}
+
 impl<const ALIGN: usize> MemMap<{ ALIGN }> {
     pub fn open(path: &str, offset: usize, len: usize) -> io::Result<Self> {
         if offset % ALIGN != 0 {
@@ -54,6 +60,20 @@ impl<const ALIGN: usize> MemMap<{ ALIGN }> {
 
     pub fn as_slice(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl<const ALIGN: usize> AsRef<[u8]> for MemMap<{ ALIGN }> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl<const ALIGN: usize> std::ops::Deref for MemMap<{ ALIGN }> {
+    type Target = [u8];
+    
+    fn deref(&self) -> &[u8] {
+        self.as_slice()
     }
 }
 

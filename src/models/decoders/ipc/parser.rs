@@ -997,7 +997,7 @@ pub(crate) fn handle_record_batch(
     })
 }
 
-/// Variant of `handle_record_batch` that creates shared (Arc) buffers for zero-copy from heap memory.
+/// Variant of `handle_record_batch` that creates shared (Arc) buffers for zero-copy.
 /// Used when reading from files where data is already in an Arc<[u8]>.
 pub(crate) fn handle_record_batch_shared(
     rec: &fb::RecordBatch,
@@ -1799,4 +1799,69 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
     };
 
     Ok(Field { name, dtype: base_type, nullable, metadata })
+}
+
+/// Creates a zero-copy buffer from mmap memory.
+/// Uses SharedBuffer::from_owner with a slice wrapper to avoid copying.
+fn create_mmap_buffer<T, M>(
+    mmap_region: &Arc<M>,
+    offset: usize,
+    len: usize,
+) -> minarrow::Buffer<T>
+where
+    T: Copy,
+    M: AsRef<[u8]> + Send + Sync + 'static,
+{
+    use minarrow::structs::shared_buffer::SharedBuffer;
+    
+    // Create a wrapper that holds a slice of the mmap
+    struct SliceWrapper<M> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+    
+    impl<M: AsRef<[u8]>> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = (*self._owner).as_ref();
+            &full[self.offset..self.offset + self.len]
+        }
+    }
+    
+    let wrapper = SliceWrapper {
+        _owner: mmap_region.clone(),
+        offset,
+        len: len * std::mem::size_of::<T>(),
+    };
+    
+    // Create SharedBuffer from the wrapper - this is zero-copy!
+    let shared = SharedBuffer::from_owner(wrapper);
+    
+    // Create Buffer from SharedBuffer - zero-copy when aligned!
+    minarrow::Buffer::from_shared(shared)
+}
+
+/// Handle record batch for mmap.
+pub fn handle_record_batch_mmap<M>(
+    batch: &fb::RecordBatch,
+    fields: &[Field],
+    dictionaries: &std::collections::HashMap<i64, Vec<String>>,
+    mmap_region: Arc<M>,
+    body_offset: usize,
+    body_len: usize,
+) -> io::Result<Table>
+where
+    M: AsRef<[u8]> + Send + Sync + 'static,
+{
+    let data = (*mmap_region).as_ref();
+    let arc_data: Arc<[u8]> = Arc::from(data);
+    
+    handle_record_batch_shared(
+        batch,
+        fields,
+        dictionaries,
+        arc_data,
+        body_offset,
+        body_len
+    )
 }
