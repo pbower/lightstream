@@ -753,25 +753,64 @@ pub(crate) fn handle_record_batch(
                 let offs = cast_slice::<u32>(offs_slice);
                 #[cfg(not(feature = "large_string"))]
                 let arr = TextArray::String32(
-                    StringArray {
-                        data: minarrow::Buffer::from(Vec64::from_slice(data_slice)),
-                        offsets: minarrow::Buffer::from(Vec64::from_slice(offs)),
+                    StringArray::new(
+                        minarrow::Buffer::from(Vec64::from_slice(data_slice)),
                         null_mask,
-                    }
+                        minarrow::Buffer::from(Vec64::from_slice(offs)),
+                    )
                     .into(),
                 );
                 #[cfg(feature = "large_string")] // TODO: Add full support
                 let offs = cast_slice::<u64>(offs_slice);
                 #[cfg(feature = "large_string")]
                 let arr = TextArray::String64(
-                    StringArray {
-                        data: minarrow::Buffer::from(Vec64::from_slice(data_slice)),
-                        offsets: minarrow::Buffer::from(Vec64::from_slice(offs)),
+                    StringArray::new(
+                        minarrow::Buffer::from(Vec64::from_slice(data_slice)),
                         null_mask,
-                    }
+                        minarrow::Buffer::from(Vec64::from_slice(offs)),
+                    )
                     .into(),
                 );
                 cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+            }
+            #[cfg(feature = "large_string")]
+            ArrowType::LargeString => {
+                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
+                    &buffers, &mut buffer_idx, body, &field.name,
+                )?;
+                check_two_buffer_bounds(
+                    &field.name, col_idx,
+                    offs_offset, offs_slice.len(), data_offset, data_slice.len(), body.len(),
+                )?;
+                // Check if this is actually u32 offset data misidentified as LargeString
+                if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
+                    // Likely u32 offsets, parse as String32 instead
+                    let offs_u32 = cast_slice::<u32>(offs_slice);
+                    let arr = TextArray::String32(
+                        StringArray::new(
+                            minarrow::Buffer::from(Vec64::from_slice(data_slice)),
+                            null_mask,
+                            minarrow::Buffer::from(Vec64::from_slice(offs_u32)),
+                        )
+                        .into(),
+                    );
+                    cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                } else {
+                    // Actual u64 offsets
+                    let offs = cast_slice::<u64>(offs_slice);
+                    let arr = TextArray::String64(
+                        StringArray::new(
+                            minarrow::Buffer::from(Vec64::from_slice(data_slice)),
+                            null_mask,
+                            minarrow::Buffer::from(Vec64::from_slice(offs)),
+                        )
+                        .into(),
+                    );
+                    cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                }
             }
             ArrowType::Date32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
