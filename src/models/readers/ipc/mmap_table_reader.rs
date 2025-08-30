@@ -490,7 +490,7 @@ mod tests {
                         if arr.data.is_shared() {
                             eprintln!("Int32 is shared");
                         }
-                        let owned = arr.data.to_owned();
+                        let owned = arr.data.to_owned_copy();
                         assert!(!owned.is_shared());
                     }
                     Array::NumericArray(NumericArray::Float64(arr)) => {
@@ -498,7 +498,7 @@ mod tests {
                         if arr.data.is_shared() {
                             eprintln!("Float64 is shared");
                         }
-                        let owned = arr.data.to_owned();
+                        let owned = arr.data.to_owned_copy();
                         assert!(!owned.is_shared());
                     }
                     Array::TextArray(TextArray::String32(arr)) => {
@@ -506,7 +506,7 @@ mod tests {
                         if arr.data.is_shared() {
                             eprintln!("String32 is shared");
                         }
-                        let owned = arr.data.to_owned();
+                        let owned = arr.data.to_owned_copy();
                         assert!(!owned.is_shared());
                     }
                     Array::BooleanArray(arr) => {
@@ -514,7 +514,7 @@ mod tests {
                         if arr.data.bits.is_shared() {
                             eprintln!("Boolean is shared");
                         }
-                        let owned = arr.data.to_owned();
+                        let owned = arr.data.to_owned_copy();
                         assert!(!owned.bits.is_shared());
                     }
                     Array::TextArray(TextArray::Categorical32(arr)) => {
@@ -522,7 +522,7 @@ mod tests {
                         if arr.data.is_shared() {
                             eprintln!("Categorical32 is shared");
                         }
-                        let owned = arr.data.to_owned();
+                        let owned = arr.data.to_owned_copy();
                         assert!(!owned.is_shared());
                     }
                     _ => {}
