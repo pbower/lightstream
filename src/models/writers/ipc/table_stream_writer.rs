@@ -1,13 +1,13 @@
-use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use futures_core::Stream;
-use minarrow::{Field, Table};
-use tokio::io::AsyncWrite;
 use crate::enums::IPCMessageProtocol;
 use crate::models::encoders::ipc::table_stream::GTableStreamEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
 use crate::utils::extract_dictionary_values_from_col;
+use futures_core::Stream;
+use minarrow::{Field, Table};
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 
 /// Streaming, synchronous Arrow IPC writer for use in pipes, custom network, etc.
@@ -20,14 +20,14 @@ use tokio::io::AsyncWriteExt;
 ///   while let Some(frame) = writer.next_frame() { ... }
 pub struct TableStreamWriter<B>
 where
-    B: StreamBuffer + Unpin + 'static
+    B: StreamBuffer + Unpin + 'static,
 {
     encoder: GTableStreamEncoder<B>,
 }
 
 impl<B> TableStreamWriter<B>
 where
-    B: StreamBuffer + Unpin + 'static
+    B: StreamBuffer + Unpin + 'static,
 {
     /// Create a new streaming Arrow Table writer with the given schema and protocol.
     pub fn new(schema: Vec<Field>, protocol: IPCMessageProtocol) -> Self {
@@ -79,7 +79,6 @@ where
         &self.encoder.schema
     }
 }
-
 
 impl<B> Stream for TableStreamWriter<B>
 where
@@ -173,9 +172,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minarrow::{Table, Field, Vec64};
     use crate::enums::IPCMessageProtocol;
     use crate::test_helpers::*;
+    use minarrow::{Field, Table, Vec64};
     use std::io;
 
     fn all_types_schema() -> Vec<Field> {
@@ -189,7 +188,8 @@ mod tests {
     #[test]
     fn test_table_stream_writer_schema_and_finish() {
         let schema = all_types_schema();
-        let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        let mut writer =
+            TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         assert_eq!(writer.schema(), &schema[..]);
         assert!(!writer.is_finished());
         writer.finish().unwrap();
@@ -201,7 +201,8 @@ mod tests {
         let schema = all_types_schema();
         let table = test_table();
 
-        let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        let mut writer =
+            TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         // Register dictionaries for categorical columns
         for (col_idx, col) in table.cols.iter().enumerate() {
             if let Some(values) = extract_dictionary_values_from_col(col) {
@@ -212,7 +213,10 @@ mod tests {
         writer.finish().unwrap();
 
         let frames = writer.drain_all_frames();
-        assert!(!frames.is_empty(), "No frames emitted after writing table and finish");
+        assert!(
+            !frames.is_empty(),
+            "No frames emitted after writing table and finish"
+        );
 
         // The first frame is the schema, at least one record batch frame, and an EOS marker.
         assert!(frames.len() >= 2);
@@ -227,7 +231,8 @@ mod tests {
         let mut table2 = test_table();
         table2.name = "another".into();
 
-        let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+        let mut writer =
+            TableStreamWriter::<Vec64<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         // Register dictionaries for categorical columns
         for (col_idx, col) in table1.cols.iter().enumerate() {
             if let Some(values) = extract_dictionary_values_from_col(col) {
@@ -240,7 +245,10 @@ mod tests {
 
         let frames = writer.drain_all_frames();
         // At least: 1 schema + 2 batches + 1 EOS
-        assert!(frames.len() >= 4, "Expected at least 4 frames: schema, 2 batches, EOS");
+        assert!(
+            frames.len() >= 4,
+            "Expected at least 4 frames: schema, 2 batches, EOS"
+        );
     }
 
     #[test]
@@ -302,13 +310,19 @@ mod tests {
 
         // Manual poll
         loop {
-            match Pin::new(&mut pin_writer).as_mut().poll_next(&mut Context::from_waker(cx)) {
+            match Pin::new(&mut pin_writer)
+                .as_mut()
+                .poll_next(&mut Context::from_waker(cx))
+            {
                 Poll::Ready(Some(Ok(frame))) => frames.push(frame),
                 Poll::Ready(None) => break,
                 Poll::Ready(Some(Err(e))) => panic!("Unexpected error from poll_next: {e}"),
                 Poll::Pending => continue,
             }
         }
-        assert!(!frames.is_empty(), "Should emit at least some frames through poll_next");
+        assert!(
+            !frames.is_empty(),
+            "Should emit at least some frames through poll_next"
+        );
     }
 }

@@ -9,17 +9,29 @@ use std::convert::TryInto;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
-use minarrow::ffi::arrow_dtype::CategoricalIndexType;
-use minarrow::{vec64, Array, ArrowType, Bitmask, BooleanArray, CategoricalArray, FieldArray, Field, FloatArray, IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64};
-#[cfg(feature = "datetime")]
-use minarrow::{DatetimeArray, TemporalArray};
-use crate::compression::{decompress, Compression};
+use crate::compression::{Compression, decompress};
 use crate::error::IoError;
-use crate::models::decoders::parquet::{decode_dictionary_indices_rle, decode_float32_plain, decode_float64_plain, decode_int32_plain, decode_int64_plain, decode_string_plain, decode_uint32_as_int32_plain, decode_uint64_as_int64_plain};
 #[cfg(feature = "datetime")]
 use crate::models::decoders::parquet::{decode_datetime32_plain, decode_datetime64_plain};
-use crate::models::encoders::parquet::metadata::{ColumnChunkMeta, ColumnMetadata, DataPageHeader, DataPageHeaderV2, DictionaryPageHeader, FileMetaData, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics, PARQUET_MAGIC};
-use crate::models::types::parquet::{parquet_to_arrow_type, ParquetEncoding, ParquetLogicalType, ParquetPhysicalType};
+use crate::models::decoders::parquet::{
+    decode_dictionary_indices_rle, decode_float32_plain, decode_float64_plain, decode_int32_plain,
+    decode_int64_plain, decode_string_plain, decode_uint32_as_int32_plain,
+    decode_uint64_as_int64_plain,
+};
+use crate::models::encoders::parquet::metadata::{
+    ColumnChunkMeta, ColumnMetadata, DataPageHeader, DataPageHeaderV2, DictionaryPageHeader,
+    FileMetaData, PARQUET_MAGIC, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
+};
+use crate::models::types::parquet::{
+    ParquetEncoding, ParquetLogicalType, ParquetPhysicalType, parquet_to_arrow_type,
+};
+use minarrow::ffi::arrow_dtype::CategoricalIndexType;
+use minarrow::{
+    Array, ArrowType, Bitmask, BooleanArray, CategoricalArray, Field, FieldArray, FloatArray,
+    IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64, vec64,
+};
+#[cfg(feature = "datetime")]
+use minarrow::{DatetimeArray, TemporalArray};
 
 /// Read an entire in‐memory Table from a Parquet v2 file.
 pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
@@ -40,13 +52,16 @@ pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
     let meta = parse_file_metadata(&mut cur)?;
 
     // map Parquet schema -> Arrow types
-    let arrow_types: Vec<_> = meta.schema
+    let arrow_types: Vec<_> = meta
+        .schema
         .iter()
-        .map(|se| parquet_to_arrow_type(
-            se.type_.unwrap(),
-            ParquetLogicalType::from_converted_type(se.converted_type),
-        ))
-        .collect::<Result<_,_>>()?;
+        .map(|se| {
+            parquet_to_arrow_type(
+                se.type_.unwrap(),
+                ParquetLogicalType::from_converted_type(se.converted_type),
+            )
+        })
+        .collect::<Result<_, _>>()?;
 
     // single row‐group, flat schema only
     let rg = &meta.row_groups[0];
@@ -86,10 +101,12 @@ pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
             let ph = parse_page_header(&mut r)?;
             let (page_defs, enc, page_vals) = match ph.type_ {
                 PageType::DataPageV2 => read_data_page_v2(&mut r, &ph, cmeta)?,
-                PageType::DataPage  => read_data_page_v1(&mut r, &ph, cmeta)?,
+                PageType::DataPage => read_data_page_v1(&mut r, &ph, cmeta)?,
                 t => return Err(IoError::Format(format!("unsupported page type {:?}", t))),
             };
-            if pages_read == 0 { page_encoding = enc; }
+            if pages_read == 0 {
+                page_encoding = enc;
+            }
 
             // accumulate `page_defs.len()` logical rows
             let this_count = page_defs.len().min(total_vals - pages_read);
@@ -100,9 +117,11 @@ pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
             // cursor is at the start of the next page header
         }
 
-        // decode the column array 
+        // decode the column array
         let array = decode_column(
-            ty, page_encoding, &dict,
+            ty,
+            page_encoding,
+            &dict,
             &values_buf,
             total_vals,
             def_levels.clone(),
@@ -114,7 +133,8 @@ pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
                 dtype: ty.clone(),
                 nullable: chunk.meta_data.definition_level == 1,
                 metadata: Default::default(),
-            }.into(),
+            }
+            .into(),
             array,
             null_count: def_levels.iter().filter(|&&b| !b).count(),
         });
@@ -135,7 +155,8 @@ fn read_data_page_v2<R: Read>(
     ph: &PageHeader,
     cmeta: &ColumnMetadata,
 ) -> Result<(Vec<bool>, ParquetEncoding, Vec<u8>), IoError> {
-    let h = ph.data_page_header_v2
+    let h = ph
+        .data_page_header_v2
         .as_ref()
         .ok_or_else(|| IoError::Format("missing DataPageHeaderV2".into()))?;
 
@@ -187,8 +208,7 @@ fn read_data_page_v1<R: Read>(
     let mut vs = Vec::new();
     r.read_to_end(&mut vs)?;
 
-    let num_vals =
-        (cmeta.num_values as usize).max(def_levels_count(&def, 1));
+    let num_vals = (cmeta.num_values as usize).max(def_levels_count(&def, 1));
     let def_levels = if cmeta.definition_level == 0 {
         vec![true; num_vals]
     } else {
@@ -208,40 +228,46 @@ fn decode_column(
     dict: &[Vec<u8>],
     buf: &[u8],
     len: usize,
-    def_levels: Vec<bool>
+    def_levels: Vec<bool>,
 ) -> Result<Array, IoError> {
     let mask = Some(Bitmask::from_bools(&def_levels));
 
     Ok(match ty {
         // numerics
-        ArrowType::Int32 if enc == ParquetEncoding::Plain => Array::NumericArray(
-            NumericArray::Int32(Arc::new(IntegerArray::from_vec64(decode_int32_plain(buf)?, mask)))
-        ),
+        ArrowType::Int32 if enc == ParquetEncoding::Plain => {
+            Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray::from_vec64(
+                decode_int32_plain(buf)?,
+                mask,
+            ))))
+        }
         ArrowType::UInt32 if enc == ParquetEncoding::Plain => {
             Array::NumericArray(NumericArray::UInt32(Arc::new(IntegerArray::from_vec64(
                 decode_uint32_as_int32_plain(buf)?,
-                mask
+                mask,
             ))))
         }
-        ArrowType::Int64 if enc == ParquetEncoding::Plain => Array::NumericArray(
-            NumericArray::Int64(Arc::new(IntegerArray::from_vec64(decode_int64_plain(buf)?, mask)))
-        ),
+        ArrowType::Int64 if enc == ParquetEncoding::Plain => {
+            Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray::from_vec64(
+                decode_int64_plain(buf)?,
+                mask,
+            ))))
+        }
         ArrowType::UInt64 if enc == ParquetEncoding::Plain => {
             Array::NumericArray(NumericArray::UInt64(Arc::new(IntegerArray::from_vec64(
                 decode_uint64_as_int64_plain(buf)?,
-                mask
+                mask,
             ))))
         }
         ArrowType::Float32 if enc == ParquetEncoding::Plain => {
             Array::NumericArray(NumericArray::Float32(Arc::new(FloatArray::from_vec64(
                 decode_float32_plain(buf)?,
-                mask
+                mask,
             ))))
         }
         ArrowType::Float64 if enc == ParquetEncoding::Plain => {
             Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray::from_vec64(
                 decode_float64_plain(buf)?,
-                mask
+                mask,
             ))))
         }
 
@@ -251,7 +277,7 @@ fn decode_column(
                 data: Bitmask::from_bytes(buf, len),
                 null_mask: mask,
                 len,
-                _phantom: Default::default()
+                _phantom: Default::default(),
             }))
         }
 
@@ -261,7 +287,7 @@ fn decode_column(
             Array::TextArray(TextArray::String32(Arc::new(StringArray {
                 offsets: offsets.into(),
                 data: data.into(),
-                null_mask: mask
+                null_mask: mask,
             })))
         }
         #[cfg(feature = "large_string")]
@@ -272,7 +298,7 @@ fn decode_column(
             Array::TextArray(TextArray::String64(Arc::new(StringArray {
                 offsets: offsets.into(),
                 data: data.into(),
-                null_mask: mask
+                null_mask: mask,
             })))
         }
 
@@ -317,7 +343,7 @@ fn decode_column(
             Array::TemporalArray(TemporalArray::Datetime32(Arc::new(DatetimeArray {
                 data: decode_datetime32_plain(buf)?.into(),
                 null_mask: mask,
-                time_unit: Default::default()
+                time_unit: Default::default(),
             })))
         }
         #[cfg(feature = "datetime")]
@@ -325,34 +351,45 @@ fn decode_column(
             Array::TemporalArray(TemporalArray::Datetime64(Arc::new(DatetimeArray {
                 data: decode_datetime64_plain(buf)?.into(),
                 null_mask: mask,
-                time_unit: Default::default()
+                time_unit: Default::default(),
             })))
         }
 
-        _ => return Err(IoError::UnsupportedType(format!("decode {:?} / {:?}", ty, enc)))
+        _ => {
+            return Err(IoError::UnsupportedType(format!(
+                "decode {:?} / {:?}",
+                ty, enc
+            )));
+        }
     })
 }
 
 // categorical builders
 
 fn build_cat32(idx: Vec64<u32>, dict_raw: &[Vec<u8>], mask: Option<Bitmask>) -> Array {
-    let dict =
-        dict_raw.iter().map(|b| String::from_utf8(b.clone()).unwrap()).collect::<Vec64<_>>().into();
+    let dict = dict_raw
+        .iter()
+        .map(|b| String::from_utf8(b.clone()).unwrap())
+        .collect::<Vec64<_>>()
+        .into();
     Array::TextArray(TextArray::Categorical32(Arc::new(CategoricalArray {
         data: idx.into(),
         unique_values: dict,
-        null_mask: mask
+        null_mask: mask,
     })))
 }
 
 #[cfg(all(feature = "extended_categorical", feature = "large_string"))]
 fn build_cat64(idx: Vec64<u64>, dict_raw: &[Vec<u8>], mask: Option<Bitmask>) -> Array {
-    let dict =
-        dict_raw.iter().map(|b| String::from_utf8(b.clone()).unwrap()).collect::<Vec64<_>>().into();
+    let dict = dict_raw
+        .iter()
+        .map(|b| String::from_utf8(b.clone()).unwrap())
+        .collect::<Vec64<_>>()
+        .into();
     Array::TextArray(TextArray::Categorical64(Arc::new(CategoricalArray {
         data: idx.into(),
         unique_values: dict,
-        null_mask: mask
+        null_mask: mask,
     })))
 }
 
@@ -448,7 +485,7 @@ fn map_codec(id: i32) -> Compression {
         1 => Compression::Snappy,
         #[cfg(feature = "zstd")]
         6 => Compression::Zstd, // spec: ZSTD = 6
-        _ => Compression::None
+        _ => Compression::None,
     }
 }
 
@@ -517,7 +554,7 @@ fn parse_file_metadata<R: Read>(r: &mut R) -> Result<FileMetaData, IoError> {
                 kv_meta = Some(map);
             }
             6 => created_by = Some(thrift_read_string(r)?),
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
 
@@ -527,7 +564,7 @@ fn parse_file_metadata<R: Read>(r: &mut R) -> Result<FileMetaData, IoError> {
         num_rows: num_rows.ok_or_else(|| IoError::Format("Missing num_rows".into()))?,
         row_groups,
         key_value_metadata: kv_meta,
-        created_by
+        created_by,
     })
 }
 
@@ -552,7 +589,7 @@ fn parse_schema_element<R: Read>(r: &mut R) -> Result<SchemaElement, IoError> {
             2 => {
                 type_ = Some(
                     ParquetPhysicalType::from_i32(thrift_read_i32(r)?)
-                        .ok_or_else(|| IoError::Format("Invalid type_".into()))?
+                        .ok_or_else(|| IoError::Format("Invalid type_".into()))?,
                 )
             }
             3 => repetition_type = Some(thrift_read_i32(r)?),
@@ -561,7 +598,7 @@ fn parse_schema_element<R: Read>(r: &mut R) -> Result<SchemaElement, IoError> {
             9 => precision = Some(thrift_read_i32(r)?),
             10 => scale = Some(thrift_read_i32(r)?),
             15 => field_id = Some(thrift_read_i32(r)?),
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
 
@@ -573,7 +610,7 @@ fn parse_schema_element<R: Read>(r: &mut R) -> Result<SchemaElement, IoError> {
         type_length,
         precision,
         scale,
-        field_id
+        field_id,
     })
 }
 
@@ -597,13 +634,13 @@ fn parse_row_group<R: Read>(r: &mut R) -> Result<RowGroupMeta, IoError> {
             }
             2 => total_byte_size = Some(thrift_read_i64(r)?),
             3 => num_rows = Some(thrift_read_i64(r)?),
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
     Ok(RowGroupMeta {
         columns,
         total_byte_size: total_byte_size.unwrap_or(0),
-        num_rows: num_rows.unwrap_or(0)
+        num_rows: num_rows.unwrap_or(0),
     })
 }
 
@@ -623,13 +660,12 @@ fn parse_column_chunk<R: Read>(r: &mut R) -> Result<ColumnChunkMeta, IoError> {
                 thrift_read_struct_begin(r)?;
                 meta_data = Some(parse_column_meta_data(r)?);
             }
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
     Ok(ColumnChunkMeta {
         file_offset: file_offset.unwrap_or(0),
-        meta_data: meta_data
-            .ok_or_else(|| IoError::Format("Missing ColumnMetaData".into()))?
+        meta_data: meta_data.ok_or_else(|| IoError::Format("Missing ColumnMetaData".into()))?,
     })
 }
 
@@ -655,7 +691,7 @@ fn parse_column_meta_data<R: Read>(r: &mut R) -> Result<ColumnMetadata, IoError>
                 let v = thrift_read_i32(r)?;
                 type_ = Some(
                     ParquetPhysicalType::from_i32(v)
-                        .ok_or_else(|| IoError::Format("Invalid physical type".into()))?
+                        .ok_or_else(|| IoError::Format("Invalid physical type".into()))?,
                 );
             }
             2 => {
@@ -664,7 +700,7 @@ fn parse_column_meta_data<R: Read>(r: &mut R) -> Result<ColumnMetadata, IoError>
                     let v = thrift_read_i32(r)?;
                     encodings.push(
                         ParquetEncoding::from_i32(v)
-                            .ok_or_else(|| IoError::Format("Invalid encoding".into()))?
+                            .ok_or_else(|| IoError::Format("Invalid encoding".into()))?,
                     );
                 }
             }
@@ -684,7 +720,7 @@ fn parse_column_meta_data<R: Read>(r: &mut R) -> Result<ColumnMetadata, IoError>
                 thrift_read_struct_begin(r)?;
                 statistics = Some(parse_statistics(r)?);
             }
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
 
@@ -699,7 +735,7 @@ fn parse_column_meta_data<R: Read>(r: &mut R) -> Result<ColumnMetadata, IoError>
         data_page_offset: data_page_offset.unwrap_or(0),
         dictionary_page_offset,
         statistics,
-        definition_level: 0
+        definition_level: 0,
     })
 }
 
@@ -720,10 +756,15 @@ fn parse_statistics<R: Read>(r: &mut R) -> Result<Statistics, IoError> {
             2 => distinct_count = Some(thrift_read_i64(r)?),
             3 => min = Some(thrift_read_bytes(r)?),
             4 => max = Some(thrift_read_bytes(r)?),
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
-    Ok(Statistics { null_count, distinct_count, min, max })
+    Ok(Statistics {
+        null_count,
+        distinct_count,
+        min,
+        max,
+    })
 }
 
 fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
@@ -744,7 +785,7 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
             1 => {
                 ptype = Some(
                     PageType::from_i32(thrift_read_i32(r)?)
-                        .ok_or_else(|| IoError::Format("Invalid PageType".into()))?
+                        .ok_or_else(|| IoError::Format("Invalid PageType".into()))?,
                 )
             }
             2 => uncomp = Some(thrift_read_i32(r)?),
@@ -766,7 +807,7 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
                 dict_ph = Some(DictionaryPageHeader {
                     num_values,
                     encoding: ParquetEncoding::Plain,
-                    is_sorted
+                    is_sorted,
                 });
             }
             7 => {
@@ -795,9 +836,9 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
                                 Some(ParquetEncoding::from_i32(thrift_read_i32(r)?).ok_or_else(
                                     || {
                                         IoError::Format(
-                                            "Invalid encoding in DataPageHeaderV2".into()
+                                            "Invalid encoding in DataPageHeaderV2".into(),
                                         )
-                                    }
+                                    },
                                 )?)
                         }
                         5 => def_len = Some(thrift_read_i32(r)?),
@@ -807,7 +848,7 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
                             thrift_read_struct_begin(r)?;
                             statistics = Some(parse_statistics(r)?);
                         }
-                        _ => thrift_skip_field(r, tpe2)?
+                        _ => thrift_skip_field(r, tpe2)?,
                     }
                 }
 
@@ -821,10 +862,10 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
                     definition_levels_byte_length: def_len.unwrap_or(0),
                     repetition_levels_byte_length: rep_len.unwrap_or(0),
                     is_compressed: is_compressed.unwrap_or(false),
-                    statistics
+                    statistics,
                 });
             }
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
 
@@ -834,7 +875,7 @@ fn parse_page_header<R: Read + Seek>(r: &mut R) -> Result<PageHeader, IoError> {
         compressed_page_size: compr.unwrap_or(0),
         data_page_header: data_ph,
         data_page_header_v2: data_ph_v2,
-        dictionary_page_header: dict_ph
+        dictionary_page_header: dict_ph,
     })
 }
 
@@ -846,7 +887,7 @@ fn thrift_peek_field<R: Read + Seek>(r: &mut R) -> Result<Option<(u8, i16)>, IoE
     match result {
         Ok((0, _)) => Ok(None), // STOP
         Ok(x) => Ok(Some(x)),
-        Err(e) => Err(e)
+        Err(e) => Err(e),
     }
 }
 
@@ -872,7 +913,7 @@ fn parse_data_page_header<R: Read>(r: &mut R) -> Result<DataPageHeader, IoError>
                 thrift_read_struct_begin(r)?;
                 stats = Some(parse_statistics(r)?);
             }
-            _ => thrift_skip_field(r, tpe)?
+            _ => thrift_skip_field(r, tpe)?,
         }
     }
     Ok(DataPageHeader {
@@ -880,7 +921,7 @@ fn parse_data_page_header<R: Read>(r: &mut R) -> Result<DataPageHeader, IoError>
         encoding: encoding.unwrap(),
         definition_level_encoding: dlev.unwrap(),
         repetition_level_encoding: rlev.unwrap(),
-        statistics: stats
+        statistics: stats,
     })
 }
 
@@ -998,7 +1039,12 @@ fn thrift_skip_field<R: Read>(r: &mut R, tpe: u8) -> Result<(), IoError> {
                 thrift_skip_field(r, 11)?;
             }
         }
-        _ => return Err(IoError::Format(format!("Cannot skip unknown thrift type {}", tpe)))
+        _ => {
+            return Err(IoError::Format(format!(
+                "Cannot skip unknown thrift type {}",
+                tpe
+            )));
+        }
     }
     Ok(())
 }
@@ -1062,7 +1108,7 @@ mod tests {
             &dict_raw,
             &encoded,
             idx.len(),
-            def_levels
+            def_levels,
         )
         .expect("decode_column failed");
 
@@ -1075,7 +1121,7 @@ mod tests {
                 let uniq: Vec<_> = cat.unique_values.iter().collect();
                 assert_eq!(uniq, vec!["foo", "bar"]);
             }
-            _ => panic!("unexpected array variant {:?}", array)
+            _ => panic!("unexpected array variant {:?}", array),
         }
     }
 
@@ -1095,7 +1141,7 @@ mod tests {
             &[],
             &buf,
             values.len(),
-            def_levels.clone()
+            def_levels.clone(),
         )
         .unwrap();
 
@@ -1104,7 +1150,7 @@ mod tests {
                 assert_eq!(arr.data.as_slice(), &values);
                 assert!(arr.null_mask.as_ref().unwrap().all_true());
             }
-            _ => panic!("unexpected array {:?}", array)
+            _ => panic!("unexpected array {:?}", array),
         }
     }
 
@@ -1119,7 +1165,7 @@ mod tests {
             &[],
             data_mask.as_slice(),
             bits.len(),
-            def_levels
+            def_levels,
         )
         .unwrap();
 
@@ -1128,9 +1174,7 @@ mod tests {
                 let out: Vec<bool> = (0..bits.len()).map(|i| arr.data.get(i)).collect();
                 assert_eq!(out.as_slice(), &bits);
             }
-            _ => panic!("unexpected array {:?}", array)
+            _ => panic!("unexpected array {:?}", array),
         }
     }
-
-    
 }

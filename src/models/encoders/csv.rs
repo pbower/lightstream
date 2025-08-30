@@ -19,7 +19,7 @@ pub struct CsvEncodeOptions {
     /// String to represent nulls.
     pub null_repr: &'static str,
     /// Quote character to use (default: '"').
-    pub quote: u8
+    pub quote: u8,
 }
 
 impl Default for CsvEncodeOptions {
@@ -28,7 +28,7 @@ impl Default for CsvEncodeOptions {
             delimiter: b',',
             write_header: true,
             null_repr: "",
-            quote: b'"'
+            quote: b'"',
         }
     }
 }
@@ -78,16 +78,20 @@ fn escape_and_quote<'a>(s: &'a str, delimiter: u8, quote: u8) -> String {
 pub fn encode_table_csv<W: Write>(
     table: &Table,
     mut writer: W,
-    options: &CsvEncodeOptions
+    options: &CsvEncodeOptions,
 ) -> io::Result<()> {
     let CsvEncodeOptions {
         delimiter,
         write_header,
         null_repr,
-        quote
+        quote,
     } = *options;
 
-    debug_println!("Encoding Table to CSV: rows = {}, cols = {}", table.n_rows, table.cols.len());
+    debug_println!(
+        "Encoding Table to CSV: rows = {}, cols = {}",
+        table.n_rows,
+        table.cols.len()
+    );
 
     // Write header
     if write_header {
@@ -134,7 +138,7 @@ pub fn encode_table_csv<W: Write>(
                 };
                 null_masks.push(null_mask)
             }
-            _ => null_masks.push(None)
+            _ => null_masks.push(None),
         }
     }
 
@@ -157,7 +161,7 @@ pub fn encode_table_csv<W: Write>(
             Array::TextArray(TextArray::Categorical64(arr)) => {
                 cat_maps.push(Some(&arr.unique_values))
             }
-            _ => cat_maps.push(None)
+            _ => cat_maps.push(None),
         }
     }
 
@@ -174,7 +178,7 @@ pub fn encode_table_csv<W: Write>(
             } else {
                 match null_masks[col_idx] {
                     Some(mask) => !mask.get(row), // Arrow: 1=valid, 0=null
-                    None => false
+                    None => false,
                 }
             };
             if is_null {
@@ -247,8 +251,12 @@ pub fn encode_table_csv<W: Write>(
                     }
                     let raw = &arr.data.as_ref()[start..end];
                     // strip embedded NULs (only for full strings)
-                    let s: String =
-                        raw.iter().copied().filter(|&b| b != 0).map(|b| b as char).collect();
+                    let s: String = raw
+                        .iter()
+                        .copied()
+                        .filter(|&b| b != 0)
+                        .map(|b| b as char)
+                        .collect();
                     let q = escape_and_quote(&s, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
@@ -261,15 +269,23 @@ pub fn encode_table_csv<W: Write>(
                     }
                     let raw = &arr.data.as_ref()[start..end];
                     // strip embedded NULs (only for full strings)
-                    let s: String =
-                        raw.iter().copied().filter(|&b| b != 0).map(|b| b as char).collect();
+                    let s: String = raw
+                        .iter()
+                        .copied()
+                        .filter(|&b| b != 0)
+                        .map(|b| b as char)
+                        .collect();
                     let q = escape_and_quote(&s, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
                 Array::TextArray(TextArray::Categorical32(arr)) => {
                     // dictionary lookup—always a clean UTF-8
                     let idx = arr.data.as_ref()[row] as usize;
-                    let val = arr.unique_values.get(idx).map(String::as_str).unwrap_or("<invalid>");
+                    let val = arr
+                        .unique_values
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("<invalid>");
                     let q = escape_and_quote(val, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
@@ -277,7 +293,11 @@ pub fn encode_table_csv<W: Write>(
                 Array::TextArray(TextArray::Categorical8(arr)) => {
                     // dictionary lookup—always a clean UTF-8
                     let idx = arr.data.as_ref()[row] as usize;
-                    let val = arr.unique_values.get(idx).map(String::as_str).unwrap_or("<invalid>");
+                    let val = arr
+                        .unique_values
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("<invalid>");
                     let q = escape_and_quote(val, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
@@ -285,7 +305,11 @@ pub fn encode_table_csv<W: Write>(
                 Array::TextArray(TextArray::Categorical16(arr)) => {
                     // dictionary lookup—always a clean UTF-8
                     let idx = arr.data.as_ref()[row] as usize;
-                    let val = arr.unique_values.get(idx).map(String::as_str).unwrap_or("<invalid>");
+                    let val = arr
+                        .unique_values
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("<invalid>");
                     let q = escape_and_quote(val, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
@@ -293,26 +317,28 @@ pub fn encode_table_csv<W: Write>(
                 Array::TextArray(TextArray::Categorical64(arr)) => {
                     // dictionary lookup—always a clean UTF-8
                     let idx = arr.data.as_ref()[row] as usize;
-                    let val = arr.unique_values.get(idx).map(String::as_str).unwrap_or("<invalid>");
+                    let val = arr
+                        .unique_values
+                        .get(idx)
+                        .map(String::as_str)
+                        .unwrap_or("<invalid>");
                     let q = escape_and_quote(val, delimiter, quote);
                     writer.write_all(q.as_bytes())?;
                 }
                 #[cfg(feature = "datetime")]
-                Array::TemporalArray(temp) => {
-                    match temp {
-                        minarrow::TemporalArray::Datetime32(arr) => {
-                            let v = arr.data.as_ref()[row];
-                            write!(writer, "{}", v)?;
-                        }
-                        minarrow::TemporalArray::Datetime64(arr) => {
-                            let v = arr.data.as_ref()[row];
-                            write!(writer, "{}", v)?;
-                        }
-                        minarrow::TemporalArray::Null => {
-                            writer.write_all(b"<null_temporal>")?;
-                        }
+                Array::TemporalArray(temp) => match temp {
+                    minarrow::TemporalArray::Datetime32(arr) => {
+                        let v = arr.data.as_ref()[row];
+                        write!(writer, "{}", v)?;
                     }
-                }
+                    minarrow::TemporalArray::Datetime64(arr) => {
+                        let v = arr.data.as_ref()[row];
+                        write!(writer, "{}", v)?;
+                    }
+                    minarrow::TemporalArray::Null => {
+                        writer.write_all(b"<null_temporal>")?;
+                    }
+                },
                 _ => {
                     writer.write_all(b"<unsupported>")?;
                 }
@@ -338,7 +364,7 @@ pub fn encode_table_csv<W: Write>(
 pub fn encode_supertable_csv<W: Write>(
     supertable: &SuperTable,
     mut writer: W,
-    options: &CsvEncodeOptions
+    options: &CsvEncodeOptions,
 ) -> io::Result<()> {
     let mut opts = options.clone();
     for (i, batch) in supertable.batches.iter().enumerate() {
@@ -351,7 +377,7 @@ pub fn encode_supertable_csv<W: Write>(
 #[cfg(test)]
 mod tests {
     use minarrow::{
-        Array, ArrowType, Bitmask, Buffer, Field, FieldArray, NumericArray, Table, TextArray, vec64
+        Array, ArrowType, Bitmask, Buffer, Field, FieldArray, NumericArray, Table, TextArray, vec64,
     };
 
     use super::*;
@@ -362,14 +388,16 @@ mod tests {
                 name: "ints".to_string(),
                 dtype: minarrow::ArrowType::Int32,
                 nullable: true, // Change to true to allow nulls
-                metadata: Default::default()
+                metadata: Default::default(),
             }
             .into(),
-            array: Array::NumericArray(NumericArray::Int32(minarrow::IntegerArray {
-                data: Buffer::from(vec64![1, 2, 3, 4]),
-                null_mask: Some(Bitmask::from_bools(&[true, false, true, true])), // row 1 is null
-            }
-            .into())),
+            array: Array::NumericArray(NumericArray::Int32(
+                minarrow::IntegerArray {
+                    data: Buffer::from(vec64![1, 2, 3, 4]),
+                    null_mask: Some(Bitmask::from_bools(&[true, false, true, true])), // row 1 is null
+                }
+                .into(),
+            )),
             null_count: 1,
         };
         let str_col = FieldArray {
@@ -377,23 +405,23 @@ mod tests {
                 name: "strings".to_string(),
                 dtype: minarrow::ArrowType::String,
                 nullable: true,
-                metadata: Default::default()
+                metadata: Default::default(),
             }
             .into(),
             array: Array::TextArray(TextArray::String32(
                 minarrow::StringArray {
                     offsets: Buffer::from(vec64![0u32, 5, 9, 14, 18]),
                     data: Buffer::from_vec64("helloabcdworldrust".as_bytes().into()),
-                    null_mask: Some(Bitmask::from_bools(&[true, false, true, true]))
+                    null_mask: Some(Bitmask::from_bools(&[true, false, true, true])),
                 }
-                .into()
+                .into(),
             )),
-            null_count: 1
+            null_count: 1,
         };
         Table {
             name: "test".to_string(),
             cols: vec![int_col, str_col],
-            n_rows: 4
+            n_rows: 4,
         }
     }
 
@@ -431,11 +459,11 @@ mod tests {
             array: Array::NumericArray(NumericArray::Int32(
                 minarrow::IntegerArray {
                     data: Buffer::from(vec64![1]),
-                    null_mask: None
+                    null_mask: None,
                 }
-                .into()
+                .into(),
             )),
-            null_count: 0
+            null_count: 0,
         };
 
         let col2_str = "needs,quotes"; // contains delimiter
@@ -445,17 +473,17 @@ mod tests {
                 minarrow::StringArray {
                     offsets: Buffer::from(vec64![0u32, col2_str.len() as u32]),
                     data: Buffer::from_vec64(col2_str.as_bytes().into()),
-                    null_mask: None
+                    null_mask: None,
                 }
-                .into()
+                .into(),
             )),
-            null_count: 0
+            null_count: 0,
         };
 
         let tbl = Table {
             name: "".into(),
             cols: vec![col1, col2],
-            n_rows: 1
+            n_rows: 1,
         };
         let mut out = Vec::new();
         encode_table_csv(&tbl, &mut out, &CsvEncodeOptions::default()).unwrap();
@@ -470,22 +498,24 @@ mod tests {
         let mut opts = CsvEncodeOptions::default();
         opts.null_repr = "NULL";
         // build a 1-row table with a null value in the first column
-        use minarrow::{IntegerArray, Field, ArrowType, FieldArray, Table, Array, NumericArray, Bitmask};
+        use minarrow::{
+            Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, NumericArray, Table,
+        };
         use std::sync::Arc;
-        
+
         let field = Field {
             name: "int32".to_string(),
             dtype: ArrowType::Int32,
             nullable: true,
             metadata: Default::default(),
         };
-        
+
         let null_mask = Bitmask::from_bytes(&[0b00000000], 1); // First bit is 0 = null
         let array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
-            data: Buffer::from(minarrow::Vec64::from_slice(&[42i32])),  // Value doesn't matter since it's null
+            data: Buffer::from(minarrow::Vec64::from_slice(&[42i32])), // Value doesn't matter since it's null
             null_mask: Some(null_mask),
         })));
-        
+
         let col = FieldArray::new(field, array);
         let tbl = Table {
             cols: vec![col],
@@ -507,116 +537,129 @@ mod tests {
         // Test that CSV decoder creates correct Arrow-semantic null masks
         use crate::models::decoders::csv::*;
         use minarrow::MaskedArray;
-        
+
         let csv = b"col\nvalid\n\nvalid2\n"; // 2 valid, 1 null (empty string)
-        let opts = CsvDecodeOptions::default(); 
+        let opts = CsvDecodeOptions::default();
         let table = decode_csv(std::io::Cursor::new(csv.as_ref()), &opts).unwrap();
-        
+
         println!("Table decoded: {:?}", table);
-        
+
         // Debug: what does the table think the null_count is?
         println!("Table null_count: {}", table.cols[0].null_count);
-        
+
         // Check the actual mask bits
         if let Array::TextArray(TextArray::String32(arr)) = &table.cols[0].array {
             let mask = arr.null_mask.as_ref().unwrap();
-            println!("Mask: len={}, ones={}, zeros={}", mask.len(), mask.count_ones(), mask.count_zeros());
+            println!(
+                "Mask: len={}, ones={}, zeros={}",
+                mask.len(),
+                mask.count_ones(),
+                mask.count_zeros()
+            );
             println!("Direct null_count call: {}", arr.null_count());
-            
+
             // Check individual bits: [valid, null, valid] = [true, false, true]
             for i in 0..3 {
                 println!("  Bit {}: {}", i, mask.get(i));
             }
-            
+
             // The issue might be here - let's see what's happening
-            println!("count_zeros() = {}, count_ones() = {}", mask.count_zeros(), mask.count_ones());
-            
+            println!(
+                "count_zeros() = {}, count_ones() = {}",
+                mask.count_zeros(),
+                mask.count_ones()
+            );
+
             // Don't assert yet, just investigate
         } else {
             panic!("Expected String32 array");
         }
     }
-    
+
     #[test]
     fn test_null_mask_interpretation_mixed_nulls() {
         // Test with a mix of null and valid values to ensure mask interpretation is correct
-        use minarrow::{IntegerArray, Field, ArrowType, FieldArray, Table, Array, NumericArray, Bitmask};
+        use minarrow::{
+            Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, NumericArray, Table,
+        };
         use std::sync::Arc;
-        
+
         let field = Field {
             name: "mixed_nulls".to_string(),
             dtype: ArrowType::Int32,
             nullable: true,
             metadata: Default::default(),
         };
-        
+
         // Create mask: [valid, null, valid, null] = [1, 0, 1, 0] = 0b0101 = 5
         let null_mask = Bitmask::from_bytes(&[0b00000101], 4);
         let array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
             data: Buffer::from(minarrow::Vec64::from_slice(&[10i32, 999i32, 30i32, 999i32])),
             null_mask: Some(null_mask),
         })));
-        
+
         let col = FieldArray::new(field, array);
         let tbl = Table {
             cols: vec![col],
             n_rows: 4,
             name: "mixed_null_test".to_string(),
         };
-        
+
         // Verify null_count is correct
         assert_eq!(tbl.cols[0].null_count, 2, "Expected 2 nulls");
-        
+
         let mut opts = CsvEncodeOptions::default();
         opts.null_repr = "NULL";
         let mut buf = Vec::new();
         encode_table_csv(&tbl, &mut buf, &opts).unwrap();
         let csv_output = String::from_utf8(buf).unwrap();
-        
+
         println!("Mixed nulls CSV: {}", csv_output);
-        
+
         // Should be: "mixed_nulls\n10\nNULL\n30\nNULL\n"
         assert_eq!(csv_output, "mixed_nulls\n10\nNULL\n30\nNULL\n");
     }
-    
-    #[test] 
+
+    #[test]
     fn test_null_mask_interpretation_all_nulls() {
         // Test with all nulls to verify mask interpretation
-        use minarrow::{IntegerArray, Field, ArrowType, FieldArray, Table, Array, NumericArray, Bitmask};
+        use minarrow::{
+            Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, NumericArray, Table,
+        };
         use std::sync::Arc;
-        
+
         let field = Field {
             name: "all_nulls".to_string(),
             dtype: ArrowType::Int32,
             nullable: true,
             metadata: Default::default(),
         };
-        
+
         // Create mask with all nulls: [0, 0, 0] = 0b000 = 0
         let null_mask = Bitmask::from_bytes(&[0b00000000], 3);
         let array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
             data: Buffer::from(minarrow::Vec64::from_slice(&[999i32, 999i32, 999i32])),
             null_mask: Some(null_mask),
         })));
-        
+
         let col = FieldArray::new(field, array);
         let tbl = Table {
             cols: vec![col],
             n_rows: 3,
             name: "all_null_test".to_string(),
         };
-        
+
         // Verify null_count is correct
         assert_eq!(tbl.cols[0].null_count, 3, "Expected 3 nulls");
-        
+
         let mut opts = CsvEncodeOptions::default();
         opts.null_repr = "NULL";
         let mut buf = Vec::new();
         encode_table_csv(&tbl, &mut buf, &opts).unwrap();
         let csv_output = String::from_utf8(buf).unwrap();
-        
+
         println!("All nulls CSV: {}", csv_output);
-        
+
         // Should be: "all_nulls\nNULL\nNULL\nNULL\n"
         assert_eq!(csv_output, "all_nulls\nNULL\nNULL\nNULL\n");
     }

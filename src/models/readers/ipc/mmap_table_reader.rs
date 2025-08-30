@@ -11,7 +11,8 @@ use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::ARROW_MAGIC_NUMBER;
 use crate::debug_println;
 use crate::models::decoders::ipc::parser::{
-    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch, handle_record_batch_shared
+    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch,
+    handle_record_batch_shared,
 };
 use crate::models::mmap::MemMap;
 
@@ -19,7 +20,7 @@ use crate::models::mmap::MemMap;
 struct IPCFileBlock {
     offset: usize,
     meta_bytes: usize,
-    body_bytes: usize
+    body_bytes: usize,
 }
 
 // Simple wrapper that keeps the file and mmap alive together
@@ -30,7 +31,7 @@ struct MmapBytes {
 
 impl std::ops::Deref for MmapBytes {
     type Target = [u8];
-    
+
     fn deref(&self) -> &[u8] {
         &self.mmap
     }
@@ -48,7 +49,7 @@ pub struct MmapTableReader {
     schema: Vec<Arc<Field>>,
     dict_blocks: Vec<IPCFileBlock>,
     record_blocks: Vec<IPCFileBlock>,
-    dictionaries: std::collections::HashMap<i64, Vec<String>>
+    dictionaries: std::collections::HashMap<i64, Vec<String>>,
 }
 
 impl MmapTableReader {
@@ -59,26 +60,43 @@ impl MmapTableReader {
 
         debug_println!("MMAP File len: {}", file_len);
 
-        // ---- MMAP file  
-        let mmap = Arc::new(MemMap::<64>::open(path.as_ref().to_str().unwrap(), 0, file_len)?);
+        // ---- MMAP file
+        let mmap = Arc::new(MemMap::<64>::open(
+            path.as_ref().to_str().unwrap(),
+            0,
+            file_len,
+        )?);
         let region = Arc::new(MmapBytes { _file: file, mmap });
-        
+
         let data = region.as_ref();
 
         if &data[..6] != ARROW_MAGIC_NUMBER {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing opening magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing opening magic",
+            ));
         }
         if &data[file_len - 6..] != ARROW_MAGIC_NUMBER {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing closing magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing closing magic",
+            ));
         }
 
         let footer_len_offset = file_len - 6 - 4;
-        let footer_len = u32::from_le_bytes(data[footer_len_offset..footer_len_offset + 4].try_into().unwrap()) as usize;
+        let footer_len = u32::from_le_bytes(
+            data[footer_len_offset..footer_len_offset + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
 
         let footer_start = footer_len_offset - footer_len;
         let footer_end = footer_start + footer_len;
         if footer_start < 8 || footer_end > file_len {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "footer out of bounds"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "footer out of bounds",
+            ));
         }
 
         let footer_msg: &fbf::Footer = {
@@ -102,7 +120,7 @@ impl MmapTableReader {
             .map(|b| IPCFileBlock {
                 offset: b.offset() as usize,
                 meta_bytes: b.metaDataLength() as usize,
-                body_bytes: b.bodyLength() as usize
+                body_bytes: b.bodyLength() as usize,
             })
             .collect::<Vec<_>>();
 
@@ -113,7 +131,7 @@ impl MmapTableReader {
             .map(|b| IPCFileBlock {
                 offset: b.offset() as usize,
                 meta_bytes: b.metaDataLength() as usize,
-                body_bytes: b.bodyLength() as usize
+                body_bytes: b.bodyLength() as usize,
             })
             .collect::<Vec<_>>();
 
@@ -122,7 +140,7 @@ impl MmapTableReader {
             schema: fields,
             dict_blocks,
             record_blocks,
-            dictionaries: std::collections::HashMap::new()
+            dictionaries: std::collections::HashMap::new(),
         };
 
         rdr.load_all_dictionaries()?;
@@ -171,7 +189,8 @@ impl MmapTableReader {
 
             RecordBatchParser::check_dictionary_delta(&dict_batch)?;
 
-            let body = &data[blk.offset + blk.meta_bytes..blk.offset + blk.meta_bytes + blk.body_bytes];
+            let body =
+                &data[blk.offset + blk.meta_bytes..blk.offset + blk.meta_bytes + blk.body_bytes];
 
             handle_dictionary_batch(&dict_batch, body, &mut new_dicts)?;
         }
@@ -189,38 +208,44 @@ impl MmapTableReader {
             &flatbuffers::root::<fbm::Message>(meta_slice).map_err(|e| {
                 io::Error::new(io::ErrorKind::InvalidData, format!("bad record msg: {e}"))
             })?;
-        
+
         let rec = fb_msg.header_as_record_batch().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "expected RecordBatch header")
         })?;
-        
+
         // Use shared handler that now supports both Arc<[u8]> and mmap zero-copy
         handle_record_batch_shared(
             &rec,
-            &self.schema.iter().map(|a| a.as_ref().clone()).collect::<Vec<_>>(),
+            &self
+                .schema
+                .iter()
+                .map(|a| a.as_ref().clone())
+                .collect::<Vec<_>>(),
             &self.dictionaries,
             self.region.clone(),
             body_offset,
-            body_len
+            body_len,
         )
     }
 
     fn slice_message<'a>(&self, data: &'a [u8], blk: &IPCFileBlock) -> io::Result<&'a [u8]> {
         if blk.offset + 8 > data.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "block header OOB"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "block header OOB",
+            ));
         }
         // Continuation marker
         let cont = u32::from_le_bytes(data[blk.offset..blk.offset + 4].try_into().unwrap());
         if cont != 0xFFFF_FFFF {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("bad continuation marker: {cont:#X}")
+                format!("bad continuation marker: {cont:#X}"),
             ));
         }
         // Metadata length
         let meta_len =
-            u32::from_le_bytes(data[blk.offset + 4..blk.offset + 8].try_into().unwrap())
-                as usize;
+            u32::from_le_bytes(data[blk.offset + 4..blk.offset + 8].try_into().unwrap()) as usize;
         eprintln!(
             "blk.offset={} meta_bytes={} body_bytes={} meta_len={} slice_len={}",
             blk.offset,
@@ -233,7 +258,10 @@ impl MmapTableReader {
         let start = blk.offset + 8;
         let end = start + meta_len;
         if end > data.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "msg slice OOB"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "msg slice OOB",
+            ));
         }
         // --- DEBUG: Dump file and message slice ---
         eprintln!("==== BLOCK DUMP ====");
@@ -264,8 +292,11 @@ impl MmapTableReader {
 #[cfg(test)]
 mod tests {
 
+    use crate::{
+        models::readers::ipc::mmap_table_reader::MmapTableReader,
+        test_helpers::{make_all_types_table, write_test_table_to_file},
+    };
     use minarrow::{Array, NumericArray, Table, TextArray};
-    use crate::{models::readers::ipc::mmap_table_reader::MmapTableReader, test_helpers::{make_all_types_table, write_test_table_to_file}};
 
     // -------------------- Tests -------------------- //
 
@@ -296,7 +327,7 @@ mod tests {
                     eprintln!("Int32 buffer was cloned (not 64-byte aligned in copied Arc)");
                 }
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
         // Float64 col: value and buffer type
         match &table2.cols[5].array {
@@ -312,7 +343,7 @@ mod tests {
                     eprintln!("Float64 buffer was cloned (not 64-byte aligned in copied Arc)");
                 }
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
         // // Dictionary col: unique values and zero-copy buffer
         // match &table2.cols[8].array {
@@ -349,7 +380,10 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(seen_string && seen_bool, "String32 and Bool must be present");
+        assert!(
+            seen_string && seen_bool,
+            "String32 and Bool must be present"
+        );
         eprintln!("Any buffers shared in mmap: {}", any_shared);
         drop(rdr);
         drop(temp);
@@ -370,24 +404,47 @@ mod tests {
         for arr in t2.cols.iter().map(|fa| &fa.array) {
             match arr {
                 Array::NumericArray(NumericArray::Int32(a)) => {
-                    if a.data.is_shared() { shared_count += 1; } else { owned_count += 1; }
+                    if a.data.is_shared() {
+                        shared_count += 1;
+                    } else {
+                        owned_count += 1;
+                    }
                 }
                 Array::NumericArray(NumericArray::Float64(a)) => {
-                    if a.data.is_shared() { shared_count += 1; } else { owned_count += 1; }
+                    if a.data.is_shared() {
+                        shared_count += 1;
+                    } else {
+                        owned_count += 1;
+                    }
                 }
                 Array::TextArray(TextArray::String32(a)) => {
-                    if a.data.is_shared() { shared_count += 1; } else { owned_count += 1; }
+                    if a.data.is_shared() {
+                        shared_count += 1;
+                    } else {
+                        owned_count += 1;
+                    }
                 }
                 Array::BooleanArray(a) => {
-                    if a.data.bits.is_shared() { shared_count += 1; } else { owned_count += 1; }
+                    if a.data.bits.is_shared() {
+                        shared_count += 1;
+                    } else {
+                        owned_count += 1;
+                    }
                 }
                 Array::TextArray(TextArray::Categorical32(a)) => {
-                    if a.data.is_shared() { shared_count += 1; } else { owned_count += 1; }
+                    if a.data.is_shared() {
+                        shared_count += 1;
+                    } else {
+                        owned_count += 1;
+                    }
                 }
                 _ => {}
             }
         }
-        eprintln!("Mmap into_table: {} shared, {} owned buffers", shared_count, owned_count);
+        eprintln!(
+            "Mmap into_table: {} shared, {} owned buffers",
+            shared_count, owned_count
+        );
         drop(temp)
     }
 
@@ -400,7 +457,9 @@ mod tests {
         let rdr = MmapTableReader::open(temp.path()).unwrap();
         assert_eq!(rdr.num_batches(), 2);
 
-        let supertbl = rdr.into_supertable(Some("my_supertable".to_string())).unwrap();
+        let supertbl = rdr
+            .into_supertable(Some("my_supertable".to_string()))
+            .unwrap();
         assert_eq!(supertbl.n_rows, 8);
         assert_eq!(supertbl.batches.len(), 2);
 
@@ -411,12 +470,11 @@ mod tests {
                 let values: Vec<i32> = arr.data.as_ref().iter().copied().collect();
                 assert_eq!(values, vec![1, 2, 3, 4]);
             }
-            _ => panic!("expected int32 col")
+            _ => panic!("expected int32 col"),
         }
     }
 
     #[tokio::test]
-    #[ignore = "to_owned() doesn't create non-shared buffers in published minarrow"]
     async fn test_big_super_table_iteration_and_owned_conversion() {
         let tables: Vec<Table> = (0..10).map(|_| make_all_types_table()).collect();
         let temp = write_test_table_to_file(&tables).await;

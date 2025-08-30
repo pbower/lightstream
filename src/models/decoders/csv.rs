@@ -14,7 +14,7 @@ use std::sync::Arc;
 use minarrow::ffi::arrow_dtype::CategoricalIndexType;
 use minarrow::{
     Array, ArrowType, Bitmask, Buffer, Field, FieldArray, FloatArray, IntegerArray, NumericArray,
-    Table, TextArray, Vec64, vec64
+    Table, TextArray, Vec64, vec64,
 };
 
 /// Options for CSV decoding.
@@ -33,7 +33,7 @@ pub struct CsvDecodeOptions {
     /// If true, all columns are loaded as String32.
     pub all_as_text: bool,
     /// For categoricals: columns that should be parsed as categorical.
-    pub categorical_cols: HashSet<String>
+    pub categorical_cols: HashSet<String>,
 }
 
 impl Default for CsvDecodeOptions {
@@ -45,7 +45,7 @@ impl Default for CsvDecodeOptions {
             has_header: true,
             schema: None,
             all_as_text: false,
-            categorical_cols: HashSet::new()
+            categorical_cols: HashSet::new(),
         }
     }
 }
@@ -56,7 +56,7 @@ impl Default for CsvDecodeOptions {
 pub fn decode_csv_batch<R: BufRead>(
     reader: &mut R,
     options: &CsvDecodeOptions,
-    batch_size: usize
+    batch_size: usize,
 ) -> io::Result<Option<Table>> {
     let opts = options.clone();
     let need_header = opts.has_header;
@@ -118,7 +118,7 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
         has_header,
         schema,
         all_as_text,
-        categorical_cols
+        categorical_cols,
     } = options.clone();
 
     let mut header: Vec<String> = Vec::new();
@@ -135,13 +135,16 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
             break;
         }
         let mut quote_balance = buf.iter().filter(|&&b| b == quote).count() % 2;
-        while quote_balance == 1 /* we are inside an open quote */ {
+        while quote_balance == 1
+        /* we are inside an open quote */
+        {
             let m = reader.read_until(b'\n', &mut buf)?;
-            if m == 0 { break; }                // EOF inside quotes → let parse fail later
-            quote_balance ^=
-                buf[n..].iter().filter(|&&b| b == quote).count() % 2;
+            if m == 0 {
+                break;
+            } // EOF inside quotes → let parse fail later
+            quote_balance ^= buf[n..].iter().filter(|&&b| b == quote).count() % 2;
         }
-        
+
         // Strip trailing \r\n or \n
         let line = {
             let l = if let Some(&b'\r') = buf.get(buf.len().saturating_sub(2)) {
@@ -174,7 +177,10 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
                 col_count = fields.len();
             }
             if fields.len() != col_count {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "inconsistent row length"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "inconsistent row length",
+                ));
             }
             rows.push(fields);
         }
@@ -199,7 +205,7 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
                 name: name.clone(),
                 dtype: ArrowType::String,
                 nullable: true,
-                metadata: Default::default()
+                metadata: Default::default(),
             })
             .collect()
     } else {
@@ -248,11 +254,15 @@ pub fn decode_csv<R: BufRead>(mut reader: R, options: &CsvDecodeOptions) -> io::
         cols.push(FieldArray {
             field: Arc::new(field.clone()),
             array,
-            null_count
+            null_count,
         });
     }
 
-    Ok(Table { name: "csv".to_string(), cols, n_rows })
+    Ok(Table {
+        name: "csv".to_string(),
+        cols,
+        n_rows,
+    })
 }
 
 /// Parse a CSV line into fields (no heap per field, only String vec return).
@@ -296,7 +306,7 @@ fn infer_schema(
     rows: &[Vec<String>],
     col_names: &[String],
     categorical_cols: &HashSet<String>,
-    nulls: &[&'static str]
+    nulls: &[&'static str],
 ) -> Vec<Field> {
     let n_cols = col_names.len();
     let mut types: Vec<ArrowType> = vec![ArrowType::String; n_cols];
@@ -366,7 +376,7 @@ fn infer_schema(
             name: name.clone(),
             dtype: types[i].clone(),
             nullable: true,
-            metadata: Default::default()
+            metadata: Default::default(),
         })
         .collect()
 }
@@ -380,11 +390,12 @@ fn mask_to_bitmask(mask: &[bool]) -> Bitmask {
 // ------- Numeric (Integer/Floating) -------
 fn parse_numeric_column<T: std::str::FromStr + Copy + Default + 'static>(
     values: &[Option<&str>],
-    null_mask: &[bool]
+    null_mask: &[bool],
 ) -> std::io::Result<Array> {
     let mut out = vec64![T::default(); values.len()];
     for (i, v) in values.iter().enumerate() {
-        if null_mask[i] { // Arrow: true=valid
+        if null_mask[i] {
+            // Arrow: true=valid
             out[i] = v.unwrap().parse::<T>().map_err(|_| {
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "failed to parse number")
             })?;
@@ -397,56 +408,56 @@ fn parse_numeric_column<T: std::str::FromStr + Copy + Default + 'static>(
             IntegerArray {
                 data: Buffer::from(
                     // SAFETY: Cast is valid because T == i32
-                    unsafe { std::mem::transmute::<Vec64<T>, Vec64<i32>>(out) }
+                    unsafe { std::mem::transmute::<Vec64<T>, Vec64<i32>>(out) },
                 ),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i64>() {
         Array::NumericArray(NumericArray::Int64(
             IntegerArray {
                 data: Buffer::from(unsafe { std::mem::transmute::<Vec64<T>, Vec64<i64>>(out) }),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<u32>() {
         Array::NumericArray(NumericArray::UInt32(
             IntegerArray {
                 data: Buffer::from(unsafe { std::mem::transmute::<Vec64<T>, Vec64<u32>>(out) }),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<u64>() {
         Array::NumericArray(NumericArray::UInt64(
             IntegerArray {
                 data: Buffer::from(unsafe { std::mem::transmute::<Vec64<T>, Vec64<u64>>(out) }),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
         Array::NumericArray(NumericArray::Float32(
             FloatArray {
                 data: Buffer::from(unsafe { std::mem::transmute::<Vec64<T>, Vec64<f32>>(out) }),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f64>() {
         Array::NumericArray(NumericArray::Float64(
             FloatArray {
                 data: Buffer::from(unsafe { std::mem::transmute::<Vec64<T>, Vec64<f64>>(out) }),
-                null_mask: Some(mask_to_bitmask(null_mask))
+                null_mask: Some(mask_to_bitmask(null_mask)),
             }
-            .into()
+            .into(),
         ))
     } else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "unsupported numeric type"
+            "unsupported numeric type",
         ));
     };
 
@@ -457,14 +468,15 @@ fn parse_numeric_column<T: std::str::FromStr + Copy + Default + 'static>(
 fn parse_bool_column(values: &[Option<&str>], null_mask: &[bool]) -> std::io::Result<Array> {
     let mut out = vec64![false; values.len()];
     for (i, v) in values.iter().enumerate() {
-        if null_mask[i] { // Arrow: true=valid
+        if null_mask[i] {
+            // Arrow: true=valid
             let s = v.unwrap().to_ascii_lowercase();
             out[i] = s == "true" || s == "1" || s == "t";
         }
     }
     Ok(Array::BooleanArray(
         minarrow::BooleanArray::new(Bitmask::from_bools(&out), Some(mask_to_bitmask(null_mask)))
-            .into()
+            .into(),
     ))
 }
 
@@ -473,7 +485,8 @@ fn parse_string_column(values: &[Option<&str>], null_mask: &[bool]) -> io::Resul
     let mut data = Vec64::with_capacity(values.len() * 8);
     let mut pos = 0u32;
     for (i, v) in values.iter().enumerate() {
-        if null_mask[i] { // Arrow: true=valid
+        if null_mask[i] {
+            // Arrow: true=valid
             let s = v.unwrap().as_bytes();
             data.extend_from_slice(s);
             pos += s.len() as u32;
@@ -484,9 +497,9 @@ fn parse_string_column(values: &[Option<&str>], null_mask: &[bool]) -> io::Resul
         minarrow::StringArray {
             offsets: Buffer::from(offsets),
             data: Buffer::from(data),
-            null_mask: Some(mask_to_bitmask(null_mask))
+            null_mask: Some(mask_to_bitmask(null_mask)),
         }
-        .into()
+        .into(),
     )))
 }
 
@@ -496,7 +509,8 @@ fn parse_categorical_column(values: &[Option<&str>], null_mask: &[bool]) -> io::
     let mut codes = vec64![0u32; values.len()];
 
     for (i, v) in values.iter().enumerate() {
-        if !null_mask[i] { // Arrow: false=null, so skip nulls
+        if !null_mask[i] {
+            // Arrow: false=null, so skip nulls
             continue;
         }
         let s = v.unwrap();
@@ -514,9 +528,9 @@ fn parse_categorical_column(values: &[Option<&str>], null_mask: &[bool]) -> io::
         minarrow::CategoricalArray {
             data: Buffer::from(codes),
             unique_values: uniques.into(),
-            null_mask: Some(mask_to_bitmask(null_mask))
+            null_mask: Some(mask_to_bitmask(null_mask)),
         }
-        .into()
+        .into(),
     )))
 }
 
@@ -543,7 +557,7 @@ mod tests {
                 let vals: Vec64<_> = arr.data.as_ref().iter().copied().collect();
                 assert_eq!(vals, vec64![1, 2, 3, 4]);
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
 
         // Bool column
@@ -552,7 +566,7 @@ mod tests {
                 let actual: Vec<bool> = (0..arr.data.len).map(|i| arr.data.get(i)).collect();
                 assert_eq!(actual, vec![true, false, true, false]);
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
 
         // Nulls: strings column has values ["hello", "", "world", "rust"] where "" is null
@@ -562,7 +576,7 @@ mod tests {
                 assert_eq!(arr.null_mask.as_ref().unwrap().count_ones(), 3); // 3 valid, 1 null
                 assert_eq!(table.cols[1].null_count, 1); // Verify null count is correct
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
     }
 
@@ -578,7 +592,7 @@ mod tests {
                 let s = std::str::from_utf8(&arr.data.as_ref()[..]).unwrap();
                 assert!(s.contains("h|ello"));
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
     }
 
@@ -591,8 +605,9 @@ mod tests {
         let mut opts = CsvDecodeOptions::default();
 
         // first batch_size = 2 -> should return rows 10,A and 20,B
-        let batch1 =
-            decode_csv_batch(&mut reader, &opts, 2).unwrap().expect("first batch should be Some");
+        let batch1 = decode_csv_batch(&mut reader, &opts, 2)
+            .unwrap()
+            .expect("first batch should be Some");
         assert_eq!(batch1.n_rows, 2);
         // header should be correctly carried through
         assert_eq!(batch1.cols[0].field.name, "col1");
@@ -603,27 +618,28 @@ mod tests {
                 let v: Vec<i32> = arr.data.as_ref().iter().copied().collect();
                 assert_eq!(v, vec![10, 20]);
             }
-            _ => panic!("wrong type for col1")
+            _ => panic!("wrong type for col1"),
         }
         match &batch1.cols[1].array {
             Array::TextArray(TextArray::String32(arr)) => {
                 let s = std::str::from_utf8(&arr.data.as_ref()[..]).unwrap();
                 assert!(s.starts_with("AB")); // "A" + "B"
             }
-            _ => panic!("wrong type for col2")
+            _ => panic!("wrong type for col2"),
         }
 
         // turn off header for next batch so we don't try to re‐consume it
         opts.has_header = false;
-        let batch2 =
-            decode_csv_batch(&mut reader, &opts, 2).unwrap().expect("second batch should be Some");
+        let batch2 = decode_csv_batch(&mut reader, &opts, 2)
+            .unwrap()
+            .expect("second batch should be Some");
         // only one row remains
         assert_eq!(batch2.n_rows, 1);
         match &batch2.cols[0].array {
             Array::NumericArray(NumericArray::Int32(arr)) => {
                 assert_eq!(arr.data.as_ref()[0], 30);
             }
-            _ => panic!()
+            _ => panic!(),
         }
 
         // third call ->  no more rows -> None
@@ -635,8 +651,7 @@ mod tests {
     fn decode_escaped_quotes() {
         use crate::models::decoders::csv::decode_csv;
         let csv = b"id,msg\n1,\"She said \"\"hi\"\" yesterday\"\n";
-        let table = decode_csv(std::io::Cursor::new(csv.as_ref()),
-                               &Default::default()).unwrap();
+        let table = decode_csv(std::io::Cursor::new(csv.as_ref()), &Default::default()).unwrap();
         match &table.cols[1].array {
             Array::TextArray(TextArray::String32(arr)) => {
                 let text = std::str::from_utf8(&arr.data.as_ref()[..]).unwrap();
@@ -663,26 +678,31 @@ mod tests {
 
     #[test]
     fn decode_with_explicit_schema() {
-        use crate::models::decoders::csv::{decode_csv, CsvDecodeOptions};
-        use minarrow::{Field, ArrowType};
+        use crate::models::decoders::csv::{CsvDecodeOptions, decode_csv};
+        use minarrow::{ArrowType, Field};
         let csv = b"a,b\n001,1.23\n";
         let schema = vec![
             Field::new("a", ArrowType::String, false, None),
             Field::new("b", ArrowType::Float64, false, None),
         ];
-        let opts = CsvDecodeOptions { schema: Some(schema.clone()), ..Default::default() };
+        let opts = CsvDecodeOptions {
+            schema: Some(schema.clone()),
+            ..Default::default()
+        };
         let tbl = decode_csv(std::io::Cursor::new(csv.as_ref()), &opts).unwrap();
         assert_eq!(tbl.cols[0].field.dtype, ArrowType::String); // honoured
     }
-    
+
     #[test]
     fn decode_no_header() {
         use crate::models::decoders::csv::{CsvDecodeOptions, decode_csv};
         let csv = b"10,20\n30,40\n";
-        let opts = CsvDecodeOptions { has_header: false, ..Default::default() };
+        let opts = CsvDecodeOptions {
+            has_header: false,
+            ..Default::default()
+        };
         let t = decode_csv(std::io::Cursor::new(csv.as_ref()), &opts).unwrap();
         assert_eq!(t.cols[0].field.name, "col1");
         assert_eq!(t.n_rows, 2);
     }
-    
 }

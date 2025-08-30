@@ -1,14 +1,14 @@
-use std::io;
-use futures_core::Stream;
-use tokio::io::AsyncWrite;
-use minarrow::{Table, Vec64, Field};
 use crate::enums::IPCMessageProtocol;
 use crate::models::encoders::ipc::table_stream::GTableStreamEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
+use futures_core::Stream;
+use minarrow::{Field, Table, Vec64};
+use std::io;
+use tokio::io::AsyncWrite;
 
+use futures_sink::Sink;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use futures_sink::Sink;
 
 /// Async Arrow Table Sink for (`Vec<u8>`).
 ///
@@ -30,7 +30,7 @@ pub type TableSink64<W> = GTableSink<W, Vec64<u8>>;
 ///
 /// This wraps any compatible async byte sink (`W: AsyncWrite`) and handles
 /// Arrow IPC protocol (framing, schema, dictionaries, record batches, footers).
-/// 
+///
 /// It yields whole `Table` objects and is the recommended sink for *Minarrow* data.
 /// Tables it yields are analogous with *Apache Arrow* *`Record Batches`* once
 /// written into the wider ecosystem.
@@ -45,8 +45,8 @@ where
     pub(crate) protocol: IPCMessageProtocol,
     pub(crate) schema_written: bool,
     pub(crate) finished: bool,
-    pub(crate) frame_buf: Option<B>,    // Current frame being written
-    pub(crate) frame_pos: usize,        // How many bytes have been written so far
+    pub(crate) frame_buf: Option<B>, // Current frame being written
+    pub(crate) frame_pos: usize,     // How many bytes have been written so far
 }
 
 impl<W, B> GTableSink<W, B>
@@ -55,11 +55,7 @@ where
     B: StreamBuffer + std::fmt::Debug + Unpin + 'static,
 {
     /// Create a new generic Arrow Table writer.
-    pub fn new(
-        sink: W,
-        schema: Vec<Field>,
-        protocol: IPCMessageProtocol,
-    ) -> io::Result<Self> {
+    pub fn new(sink: W, schema: Vec<Field>, protocol: IPCMessageProtocol) -> io::Result<Self> {
         Ok(Self {
             inner: GTableStreamEncoder::new(schema.clone(), protocol),
             schema,
@@ -89,10 +85,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        table: Table
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, table: Table) -> Result<(), Self::Error> {
         if !self.schema_written {
             self.inner.write_schema_frame()?;
             self.schema_written = true;
@@ -101,10 +94,7 @@ where
         Ok(())
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // drain encoder into sink, honouring partial writes
         loop {
             // If no frame buffered, poll encoder for next one.
@@ -127,8 +117,7 @@ where
                         self.frame_buf = Some(buf);
                         return Poll::Pending;
                     }
-                    Poll::Ready(Ok(0)) =>
-                        return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+                    Poll::Ready(Ok(0)) => return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
                     Poll::Ready(Ok(n)) => {
                         self.frame_pos += n;
                         if self.frame_pos < buf.as_ref().len() {
@@ -150,14 +139,10 @@ where
         Pin::new(&mut self.destination).poll_flush(cx)
     }
 
-
-    fn poll_close(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // Emit EOS / footer
         if !self.finished {
-            self.inner.finish()?;     // enqueue EOS or footer frame
+            self.inner.finish()?; // enqueue EOS or footer frame
             self.finished = true;
         }
 
@@ -168,6 +153,8 @@ where
         }
 
         // Shut down the underlying AsyncWrite
-        Pin::new(&mut self.destination).poll_shutdown(cx).map_err(Into::into)
+        Pin::new(&mut self.destination)
+            .poll_shutdown(cx)
+            .map_err(Into::into)
     }
 }

@@ -4,7 +4,6 @@
 
 use crate::error::IoError;
 
-
 /// Supported Parquet compression codecs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Compression {
@@ -30,7 +29,7 @@ pub fn compress(input: &[u8], codec: Compression) -> Result<Vec<u8>, IoError> {
         #[cfg(feature = "snappy")]
         Compression::Snappy => snappy_compress(input),
         #[cfg(feature = "zstd")]
-        Compression::Zstd => zstd_compress(input)
+        Compression::Zstd => zstd_compress(input),
     }
 }
 
@@ -52,7 +51,7 @@ fn zstd_compress(input: &[u8]) -> Result<Vec<u8>, IoError> {
 
 /// Decompress a buffer according to the codec.
 /// Returns a new Vec<u8> containing the decompressed data.
-/// 
+///
 /// # Arguments
 /// - `input`: Compressed bytes.
 /// - `codec`: Compression algorithm to use (must match source).
@@ -72,14 +71,14 @@ pub fn decompress(input: &[u8], codec: Compression) -> Result<Vec<u8>, IoError> 
 #[cfg(feature = "snappy")]
 fn snappy_decompress(input: &[u8]) -> Result<Vec<u8>, IoError> {
     let mut decoder = snappy::Decoder::new();
-    decoder.decompress_vec(input)
+    decoder
+        .decompress_vec(input)
         .map_err(|e| IoError::Compression(format!("Snappy decompression failed: {:?}", e)))
 }
 
 #[cfg(feature = "zstd")]
 fn zstd_decompress(input: &[u8]) -> Result<Vec<u8>, IoError> {
-    zstd::stream::decode_all(input)
-        .map_err(IoError::from)
+    zstd::stream::decode_all(input).map_err(IoError::from)
 }
 
 /// Returns the codec as a Parquet-format string identifier.
@@ -92,4 +91,3 @@ pub fn parquet_codec_name(codec: Compression) -> &'static str {
         Compression::Zstd => "ZSTD",
     }
 }
-

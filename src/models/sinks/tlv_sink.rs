@@ -1,6 +1,6 @@
 use std::io;
-use std::task::{Context, Poll};
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use futures_core::Stream;
 use futures_sink::Sink;
@@ -59,24 +59,15 @@ where
 {
     type Error = io::Error;
 
-    fn poll_ready(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        frame: TLVFrame
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, frame: TLVFrame) -> Result<(), Self::Error> {
         self.stream.write_frame(frame.t, frame.value)
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         loop {
             if self.frame_buf.is_none() {
                 match Pin::new(&mut self.stream).poll_next(cx) {
@@ -96,8 +87,7 @@ where
                         self.frame_buf = Some(buf);
                         return Poll::Pending;
                     }
-                    Poll::Ready(Ok(0)) =>
-                        return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+                    Poll::Ready(Ok(0)) => return Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
                     Poll::Ready(Ok(n)) => {
                         self.frame_pos += n;
                         if self.frame_pos < buf.as_ref().len() {
@@ -116,10 +106,7 @@ where
         Pin::new(&mut self.sink).poll_flush(cx)
     }
 
-    fn poll_close(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), Self::Error>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         if !self.finished {
             self.finish();
         }
@@ -127,17 +114,19 @@ where
             Poll::Pending => return Poll::Pending,
             Poll::Ready(()) => {}
         }
-        Pin::new(&mut self.sink).poll_shutdown(cx).map_err(Into::into)
+        Pin::new(&mut self.sink)
+            .poll_shutdown(cx)
+            .map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minarrow::Vec64;
-    use futures_util::{sink::SinkExt, task};
-    use tokio::io::{duplex, AsyncReadExt, DuplexStream};
     use crate::models::frames::tlv_frame::TLVFrame;
+    use futures_util::{sink::SinkExt, task};
+    use minarrow::Vec64;
+    use tokio::io::{AsyncReadExt, DuplexStream, duplex};
 
     // Helper to read exactly n bytes from a DuplexStream.
     async fn read_exact_async(stream: &mut DuplexStream, mut n: usize) -> Vec<u8> {
@@ -159,8 +148,14 @@ mod tests {
         let mut writer = TLVSink::<_, Vec64<u8>>::new(client);
 
         // Write two frames (async Sink interface)
-        let f1 = TLVFrame { t: 42, value: &[0xDE, 0xAD, 0xBE] };
-        let f2 = TLVFrame { t: 1, value: &[0xFF] };
+        let f1 = TLVFrame {
+            t: 42,
+            value: &[0xDE, 0xAD, 0xBE],
+        };
+        let f2 = TLVFrame {
+            t: 1,
+            value: &[0xFF],
+        };
         SinkExt::send(&mut writer, f1).await.unwrap();
         SinkExt::send(&mut writer, f2).await.unwrap();
 

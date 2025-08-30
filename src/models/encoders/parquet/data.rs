@@ -62,7 +62,7 @@ pub fn encode_bool_bitpacked(
     values: &Bitmask,
     null_mask: Option<&Bitmask>,
     len: usize,
-    out: &mut Vec<u8>
+    out: &mut Vec<u8>,
 ) {
     //out.clear();
     let mut byte = 0u8;
@@ -92,7 +92,7 @@ pub fn encode_string_plain(
     values: &[u8],
     null_mask: Option<&Bitmask>,
     len: usize,
-    out: &mut Vec<u8>
+    out: &mut Vec<u8>,
 ) -> Result<(), IoError> {
     for i in 0..len {
         // always emit a 4-byte length prefix
@@ -115,7 +115,7 @@ pub fn encode_large_string_plain(
     values: &[u8],
     null_mask: Option<&Bitmask>,
     len: usize,
-    out: &mut Vec<u8>
+    out: &mut Vec<u8>,
 ) -> Result<(), IoError> {
     for i in 0..len {
         let valid = null_mask.map_or(true, |m| m.get(i));
@@ -123,7 +123,10 @@ pub fn encode_large_string_plain(
         let end = offsets[i + 1] as usize;
         let s_len = if valid { end - start } else { 0 };
         if valid && s_len > u32::MAX as usize {
-            return Err(IoError::MinarrowError(format!("string >4 GiB ({} bytes)", s_len)));
+            return Err(IoError::MinarrowError(format!(
+                "string >4 GiB ({} bytes)",
+                s_len
+            )));
         }
         // length prefix for every row
         out.extend_from_slice(&(s_len as u32).to_le_bytes());
@@ -143,7 +146,7 @@ pub fn encode_datetime64_plain(data: &[i64], out: &mut Vec<u8>) {
     encode_int64_plain(data, out)
 }
 
-// RLE for dictionary indices 
+// RLE for dictionary indices
 
 /// Encode dictionary indices using Parquet’s hybrid RLE / bit-packing
 /// format.
@@ -153,10 +156,7 @@ pub fn encode_datetime64_plain(data: &[i64], out: &mut Vec<u8>) {
 /// * `out` is appended to – caller may reuse a buffer.
 ///
 /// Returns `IoError::Format` if any index does not fit in 32 bits.
-pub fn encode_dictionary_indices_rle(
-    indices: &[u32],
-    out: &mut Vec<u8>
-) -> Result<(), IoError> {
+pub fn encode_dictionary_indices_rle(indices: &[u32], out: &mut Vec<u8>) -> Result<(), IoError> {
     if indices.is_empty() {
         out.push(0);
         return Ok(());
@@ -265,8 +265,10 @@ mod tests {
         let mut buf = Vec::new();
         encode_int32_plain(&data, &mut buf);
         // break into 4‐byte chunks and reassemble
-        let out: Vec<i32> =
-            buf.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<i32> = buf
+            .chunks_exact(4)
+            .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
@@ -275,8 +277,10 @@ mod tests {
         let data = [1i64, -1i64, 0x1122334455667788];
         let mut buf = Vec::new();
         encode_int64_plain(&data, &mut buf);
-        let out: Vec<i64> =
-            buf.chunks_exact(8).map(|c| i64::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<i64> = buf
+            .chunks_exact(8)
+            .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
@@ -285,8 +289,10 @@ mod tests {
         let data = [0u32, 1, 0xdeadbeef];
         let mut buf = Vec::new();
         encode_uint32_as_int32_plain(&data, &mut buf);
-        let out: Vec<u32> =
-            buf.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<u32> = buf
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
@@ -295,8 +301,10 @@ mod tests {
         let data = [0u64, 1, 0xabcdef0123456789];
         let mut buf = Vec::new();
         encode_uint64_as_int64_plain(&data, &mut buf);
-        let out: Vec<u64> =
-            buf.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<u64> = buf
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
@@ -305,8 +313,10 @@ mod tests {
         let data = [0.0f32, -1.5, 3.14159];
         let mut buf = Vec::new();
         encode_float32_plain(&data, &mut buf);
-        let out: Vec<f32> =
-            buf.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<f32> = buf
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
@@ -315,15 +325,19 @@ mod tests {
         let data = [0.0f64, -1.5, 2.718281828];
         let mut buf = Vec::new();
         encode_float64_plain(&data, &mut buf);
-        let out: Vec<f64> =
-            buf.chunks_exact(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect();
+        let out: Vec<f64> = buf
+            .chunks_exact(8)
+            .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
         assert_eq!(out, data);
     }
 
     #[test]
     fn test_encode_bool_bitpacked_no_nulls() {
         // 10 booleans: T, F, T, T, F, F, F, T, T, F
-        let bits = [true, false, true, true, false, false, false, true, true, false];
+        let bits = [
+            true, false, true, true, false, false, false, true, true, false,
+        ];
         let mask = Bitmask::from_bools(&bits);
         let mut buf = Vec::new();
         encode_bool_bitpacked(&mask, None, bits.len(), &mut buf);
@@ -350,7 +364,12 @@ mod tests {
         nulls.set_false(1);
         nulls.set_false(3);
         let mut buf = Vec::new();
-        encode_bool_bitpacked(&Bitmask::from_bools(&values), Some(&nulls), values.len(), &mut buf);
+        encode_bool_bitpacked(
+            &Bitmask::from_bools(&values),
+            Some(&nulls),
+            values.len(),
+            &mut buf,
+        );
 
         // check that bits at 1 and 3 are 0:
         let byte = buf[0];

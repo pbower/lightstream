@@ -1,6 +1,6 @@
 //! Parquet file, schema and page-metadata serialisation.
 use std::collections::BTreeMap;
-use std::io::{Write, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom, Write};
 
 use crate::error::IoError;
 use crate::models::types::parquet::{ParquetEncoding, ParquetPhysicalType};
@@ -11,7 +11,7 @@ pub const PARQUET_MAGIC: &[u8; 4] = b"PAR1";
 // --------------------- Structs ------------------------------------ //
 /// Complete file metadata for footer.
 #[derive(Debug, Clone)]
-pub (crate) struct FileMetaData {
+pub(crate) struct FileMetaData {
     pub version: i32,
     pub schema: Vec<SchemaElement>,
     pub num_rows: i64,
@@ -22,7 +22,7 @@ pub (crate) struct FileMetaData {
 
 /// Types as SchemaElements.
 #[derive(Debug, Clone)]
-pub (crate) struct SchemaElement {
+pub(crate) struct SchemaElement {
     pub name: String,
     pub repetition_type: i32, // 0 = REQUIRED, 1 = OPTIONAL, 2 = REPEATED
     pub type_: Option<ParquetPhysicalType>,
@@ -33,10 +33,9 @@ pub (crate) struct SchemaElement {
     pub field_id: Option<i32>,
 }
 
-
 /// Row group metadata.
 #[derive(Debug, Clone)]
-pub (crate) struct RowGroupMeta {
+pub(crate) struct RowGroupMeta {
     pub columns: Vec<ColumnChunkMeta>,
     pub total_byte_size: i64,
     pub num_rows: i64,
@@ -44,14 +43,14 @@ pub (crate) struct RowGroupMeta {
 
 /// Each column chunk, for primitive, unsigned, or categorical/dictionary columns.
 #[derive(Debug, Clone)]
-pub (crate) struct ColumnChunkMeta {
+pub(crate) struct ColumnChunkMeta {
     pub file_offset: i64,
     pub meta_data: ColumnMetadata,
 }
 
 /// For categorical/dictionary types.
 #[derive(Debug, Clone)]
-pub (crate) struct ColumnMetadata {
+pub(crate) struct ColumnMetadata {
     pub type_: ParquetPhysicalType,
     pub encodings: Vec<ParquetEncoding>,
     pub path_in_schema: Vec<String>,
@@ -73,7 +72,7 @@ pub (crate) struct ColumnMetadata {
 ///
 /// => Min, max, null/unique count
 #[derive(Debug, Clone)]
-pub (crate) struct Statistics {
+pub(crate) struct Statistics {
     pub null_count: Option<i64>,
     pub distinct_count: Option<i64>,
     pub min: Option<Vec<u8>>,
@@ -82,7 +81,7 @@ pub (crate) struct Statistics {
 
 /// Parquet DataPageHeader (from parquet.thrift).
 #[derive(Debug, Clone)]
-pub (crate) struct DataPageHeader {
+pub(crate) struct DataPageHeader {
     pub num_values: i32,
     pub encoding: ParquetEncoding,
     pub definition_level_encoding: ParquetEncoding,
@@ -91,10 +90,10 @@ pub (crate) struct DataPageHeader {
 }
 
 /// Parquet DataPageHeaderV2
-/// 
+///
 /// Introduced in parquet v2 (via thrift)
 #[derive(Debug, Clone)]
-pub (crate) struct DataPageHeaderV2 {
+pub(crate) struct DataPageHeaderV2 {
     pub num_rows: i32,
     pub num_nulls: i32,
     pub num_values: i32,
@@ -106,7 +105,7 @@ pub (crate) struct DataPageHeaderV2 {
 }
 
 #[derive(Debug, Clone)]
-pub (crate) struct PageHeader {
+pub(crate) struct PageHeader {
     pub type_: PageType,
     pub uncompressed_page_size: i32,
     pub compressed_page_size: i32,
@@ -115,10 +114,9 @@ pub (crate) struct PageHeader {
     pub dictionary_page_header: Option<DictionaryPageHeader>,
 }
 
-
 /// Parquet Dictionary Page Header, as required for categorical/dictionary columns.
 #[derive(Debug, Clone)]
-pub (crate) struct DictionaryPageHeader {
+pub(crate) struct DictionaryPageHeader {
     pub num_values: i32,
     pub encoding: ParquetEncoding,
     pub is_sorted: Option<bool>,
@@ -128,7 +126,7 @@ pub (crate) struct DictionaryPageHeader {
 
 /// Parquet Page types (from parquet.thrift).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub (crate) enum PageType {
+pub(crate) enum PageType {
     DataPage = 0,
     IndexPage = 1,
     DictionaryPage = 2,
@@ -182,12 +180,12 @@ impl DataPageHeader {
 impl DataPageHeaderV2 {
     pub fn write<W: Write>(&self, mut w: W) -> Result<(), IoError> {
         thrift_write_struct_begin(&mut w, 0x0c);
-        thrift_write_field_i32 (&mut w, 1, self.num_rows);
-        thrift_write_field_i32 (&mut w, 2, self.num_nulls);
-        thrift_write_field_i32 (&mut w, 3, self.num_values);
-        thrift_write_field_i32 (&mut w, 4, self.encoding.to_i32());
-        thrift_write_field_i32 (&mut w, 5, self.definition_levels_byte_length);
-        thrift_write_field_i32 (&mut w, 6, self.repetition_levels_byte_length);
+        thrift_write_field_i32(&mut w, 1, self.num_rows);
+        thrift_write_field_i32(&mut w, 2, self.num_nulls);
+        thrift_write_field_i32(&mut w, 3, self.num_values);
+        thrift_write_field_i32(&mut w, 4, self.encoding.to_i32());
+        thrift_write_field_i32(&mut w, 5, self.definition_levels_byte_length);
+        thrift_write_field_i32(&mut w, 6, self.repetition_levels_byte_length);
         thrift_write_field_bool(&mut w, 7, self.is_compressed);
         if let Some(ref s) = self.statistics {
             thrift_write_field_struct_begin(&mut w, 8);
@@ -197,7 +195,6 @@ impl DataPageHeaderV2 {
         Ok(())
     }
 }
-
 
 impl PageHeader {
     pub fn write<W: Write>(&self, mut w: W) -> Result<(), IoError> {
@@ -211,7 +208,7 @@ impl PageHeader {
             h.write(&mut w)?;
         }
         if let Some(ref h2) = self.data_page_header_v2 {
-            thrift_write_field_struct_begin(&mut w, 7);    // field id 7 for V2
+            thrift_write_field_struct_begin(&mut w, 7); // field id 7 for V2
             h2.write(&mut w)?;
         }
         if let Some(ref d) = self.dictionary_page_header {
@@ -285,7 +282,7 @@ impl FileMetaData {
         w.write_all(&buf)?;
         let footer_len = buf.len() as u32;
         w.write_all(&footer_len.to_le_bytes())?; // 32-bit little-endian length
-        w.write_all(PARQUET_MAGIC)?;             // tail magic
+        w.write_all(PARQUET_MAGIC)?; // tail magic
 
         Ok(start_pos)
     }
@@ -331,7 +328,6 @@ impl SchemaElement {
         Ok(())
     }
 }
-
 
 impl RowGroupMeta {
     pub fn write<W: Write>(&self, mut w: W) -> Result<(), IoError> {

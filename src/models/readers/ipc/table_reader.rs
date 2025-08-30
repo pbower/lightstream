@@ -1,12 +1,12 @@
-use std::io;
-use std::sync::Arc;
-use minarrow::{FieldArray, Field, SuperTable, Table};
-use futures_core::Stream;
-use tokio::io::AsyncRead;
 use crate::enums::IPCMessageProtocol;
 use crate::models::decoders::ipc::table_stream::GTableStreamDecoder;
 use crate::traits::stream_buffer::StreamBuffer;
+use futures_core::Stream;
 use futures_util::StreamExt;
+use minarrow::{Field, FieldArray, SuperTable, Table};
+use std::io;
+use std::sync::Arc;
+use tokio::io::AsyncRead;
 
 pub struct TableReader<S, B>
 where
@@ -36,7 +36,7 @@ where
         Ok(tables)
     }
 
-    /// Read up to `n` Arrow tables (batches) from the stream. If `n` is `None`, reads all available tables. 
+    /// Read up to `n` Arrow tables (batches) from the stream. If `n` is `None`, reads all available tables.
     /// Then, if this is an infinite table stream, it may never stop.
     pub async fn read_tables(mut self, n: Option<usize>) -> io::Result<Vec<Table>> {
         let mut tables = Vec::new();
@@ -116,12 +116,16 @@ where
     }
 }
 
-/// Combine all batches into a single Table 
+/// Combine all batches into a single Table
 fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Result<Table> {
     if batches.is_empty() {
         return Ok(Table::default());
     }
-    let schema = batches[0].cols.iter().map(|f| f.field.clone()).collect::<Vec<_>>();
+    let schema = batches[0]
+        .cols
+        .iter()
+        .map(|f| f.field.clone())
+        .collect::<Vec<_>>();
     let n_rows: usize = batches.iter().map(|t| t.n_rows).sum();
     let name = name.unwrap_or_else(|| "CombinedTable".to_string());
 
@@ -139,21 +143,20 @@ fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Re
         .map(|col_batches| concat_field_arrays(col_batches))
         .collect::<Result<Vec<FieldArray>, io::Error>>()?;
 
-    Ok(Table {
-        cols,
-        n_rows,
-        name,
-    })
+    Ok(Table { cols, n_rows, name })
 }
 
 /// Concatenate a vector of FieldArray with the same schema using efficient in-place semantics.
 /// Uses `Array::concat_array` to avoid unnecessary copying.
-/// 
+///
 /// Panics if arrays are not the same logical type or incompatible.
 /// If you want graceful error handling for schema mismatches, add validation above.
 fn concat_field_arrays(batches: Vec<FieldArray>) -> io::Result<FieldArray> {
     if batches.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "No arrays to concatenate"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "No arrays to concatenate",
+        ));
     }
     let mut iter = batches.into_iter();
     let mut first = iter.next().unwrap();
@@ -169,23 +172,23 @@ fn concat_field_arrays(batches: Vec<FieldArray>) -> io::Result<FieldArray> {
 // src/models/readers/table_stream_reader/tests.rs
 #[cfg(test)]
 mod tests {
+    use crate::enums::IPCMessageProtocol;
     use crate::models::readers::ipc::table_reader::TableReader;
     use crate::models::writers::ipc::table_stream_writer::TableStreamWriter;
-    use crate::test_helpers::{
-        make_all_types_table, make_schema_all_types,
-    };
-    use crate::enums::IPCMessageProtocol;
+    use crate::test_helpers::{make_all_types_table, make_schema_all_types};
     use futures_core::Stream;
     use minarrow::{SuperTable, Table};
     use std::io;
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    use tokio::io::{duplex, AsyncRead, ReadBuf, AsyncWriteExt};
+    use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf, duplex};
 
     /// Helper function to register dictionaries for categorical columns in a table
-    fn register_dictionaries_for_table<B: crate::traits::stream_buffer::StreamBuffer + Unpin + 'static>(
-        writer: &mut TableStreamWriter<B>, 
-        table: &Table
+    fn register_dictionaries_for_table<
+        B: crate::traits::stream_buffer::StreamBuffer + Unpin + 'static,
+    >(
+        writer: &mut TableStreamWriter<B>,
+        table: &Table,
     ) {
         for (col_idx, col) in table.cols.iter().enumerate() {
             if let Some(values) = crate::utils::extract_dictionary_values_from_col(col) {
@@ -256,9 +259,7 @@ mod tests {
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let out = reader.read_all_tables().await.unwrap();
@@ -289,9 +290,7 @@ mod tests {
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let out = reader.read_tables(Some(2)).await.unwrap();
@@ -316,9 +315,7 @@ mod tests {
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let st: SuperTable = reader
@@ -348,9 +345,7 @@ mod tests {
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let t: Table = reader.combine_to_table(Some("all".into())).await.unwrap();
@@ -358,9 +353,6 @@ mod tests {
         assert_eq!(t.name, "all");
         assert_eq!(t.cols.len(), table.cols.len());
     }
-
-
-
 
     /// One-by-one batch reading with `read_next`.
     /// Debug test to understand EOS handling issue
@@ -378,20 +370,23 @@ mod tests {
         // Check what's in the last frame
         println!("Total frames: {}", frames.len());
         for (i, frame) in frames.iter().enumerate() {
-            println!("Frame {}: {} bytes = {:?}", i, frame.len(), &frame[..std::cmp::min(frame.len(), 20)]);
+            println!(
+                "Frame {}: {} bytes = {:?}",
+                i,
+                frame.len(),
+                &frame[..std::cmp::min(frame.len(), 20)]
+            );
         }
 
         let all_bytes: Vec<u8> = frames.iter().flat_map(|v| v.iter().cloned()).collect();
         println!("Total bytes: {}", all_bytes.len());
-        println!("Last 20 bytes: {:?}", &all_bytes[all_bytes.len()-20..]);
-        
+        println!("Last 20 bytes: {:?}", &all_bytes[all_bytes.len() - 20..]);
+
         let (mut tx, rx) = duplex(64 * 1024);
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let result = reader.read_all_tables().await;
@@ -417,9 +412,7 @@ mod tests {
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
 
-        let combined = Combined {
-            reader: rx,
-        };
+        let combined = Combined { reader: rx };
 
         let mut reader = TableReader::new(
             /* stream = */ combined,

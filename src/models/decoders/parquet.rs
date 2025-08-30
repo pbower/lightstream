@@ -10,23 +10,36 @@ use crate::error::IoError;
 
 pub fn decode_int32_plain(buf: &[u8]) -> Result<Vec64<i32>, IoError> {
     if buf.len() % 4 != 0 {
-        return Err(IoError::Format("decode_int32_plain: buffer len % 4 != 0".into()));
+        return Err(IoError::Format(
+            "decode_int32_plain: buffer len % 4 != 0".into(),
+        ));
     }
-    Ok(buf.chunks_exact(4).map(|c| i32::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(4)
+        .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 pub fn decode_int64_plain(buf: &[u8]) -> Result<Vec64<i64>, IoError> {
     if buf.len() % 8 != 0 {
-        return Err(IoError::Format("decode_int64_plain: buffer len % 8 != 0".into()));
+        return Err(IoError::Format(
+            "decode_int64_plain: buffer len % 8 != 0".into(),
+        ));
     }
-    Ok(buf.chunks_exact(8).map(|c| i64::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(8)
+        .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 pub fn decode_uint32_as_int32_plain(buf: &[u8]) -> Result<Vec64<u32>, IoError> {
     if buf.len() % 4 != 0 {
         return Err(IoError::Format("buffer len % 4 != 0".into()));
     }
-    Ok(buf.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(4)
+        .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 #[cfg(feature = "extended_numeric_types")]
@@ -39,36 +52,49 @@ pub fn decode_uint16_as_int32_plain(buf: &[u8]) -> Result<Vec64<u16>, IoError> {
     if buf.len() % 2 != 0 {
         return Err(IoError::Format("buffer len % 2 != 0".into()));
     }
-    Ok(buf.chunks_exact(2).map(|c| u16::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 pub fn decode_uint64_as_int64_plain(buf: &[u8]) -> Result<Vec64<u64>, IoError> {
     if buf.len() % 8 != 0 {
         return Err(IoError::Format("buffer len % 8 != 0".into()));
     }
-    Ok(buf.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(8)
+        .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 pub fn decode_float32_plain(buf: &[u8]) -> Result<Vec64<f32>, IoError> {
     if buf.len() % 4 != 0 {
-        return Err(IoError::Format("decode_float32_plain: buffer len % 4 != 0".into()));
+        return Err(IoError::Format(
+            "decode_float32_plain: buffer len % 4 != 0".into(),
+        ));
     }
-    Ok(buf.chunks_exact(4).map(|c| f32::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 pub fn decode_float64_plain(buf: &[u8]) -> Result<Vec64<f64>, IoError> {
     if buf.len() % 8 != 0 {
-        return Err(IoError::Format("decode_float64_plain: buffer len % 8 != 0".into()));
+        return Err(IoError::Format(
+            "decode_float64_plain: buffer len % 8 != 0".into(),
+        ));
     }
-    Ok(buf.chunks_exact(8).map(|c| f64::from_le_bytes(c.try_into().unwrap())).collect())
+    Ok(buf
+        .chunks_exact(8)
+        .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+        .collect())
 }
 
 // UTF-8 strings
 
-pub fn decode_string_plain(
-    buf: &[u8],
-    len: usize
-) -> Result<(Vec64<u32>, Vec64<u8>), IoError> {
+pub fn decode_string_plain(buf: &[u8], len: usize) -> Result<(Vec64<u32>, Vec64<u8>), IoError> {
     let mut offsets = Vec64::with_capacity(len + 1);
     offsets.push(0);
     let mut values = Vec64::new();
@@ -76,10 +102,12 @@ pub fn decode_string_plain(
 
     for _ in 0..len {
         let mut l4 = [0u8; 4];
-        p.read_exact(&mut l4).map_err(|e| IoError::Format(e.to_string()))?;
+        p.read_exact(&mut l4)
+            .map_err(|e| IoError::Format(e.to_string()))?;
         let l = u32::from_le_bytes(l4) as usize;
         let mut s = vec![0u8; l];
-        p.read_exact(&mut s).map_err(|e| IoError::Format(e.to_string()))?;
+        p.read_exact(&mut s)
+            .map_err(|e| IoError::Format(e.to_string()))?;
         values.extend_from_slice(&s);
         offsets.push(values.len() as u32);
     }
@@ -89,7 +117,7 @@ pub fn decode_string_plain(
 #[cfg(feature = "large_string")]
 pub fn decode_large_string_plain(
     buf: &[u8],
-    len: usize
+    len: usize,
 ) -> Result<(Vec64<u64>, Vec64<u8>), IoError> {
     let mut offsets = Vec64::with_capacity(len + 1);
     offsets.push(0);
@@ -98,10 +126,12 @@ pub fn decode_large_string_plain(
 
     for _ in 0..len {
         let mut l4 = [0u8; 4];
-        p.read_exact(&mut l4).map_err(|e| IoError::Format(e.to_string()))?;
+        p.read_exact(&mut l4)
+            .map_err(|e| IoError::Format(e.to_string()))?;
         let l = u32::from_le_bytes(l4) as usize;
         let mut s = vec![0u8; l];
-        p.read_exact(&mut s).map_err(|e| IoError::Format(e.to_string()))?;
+        p.read_exact(&mut s)
+            .map_err(|e| IoError::Format(e.to_string()))?;
         values.extend_from_slice(&s);
         offsets.push(values.len() as u64);
     }
@@ -175,7 +205,7 @@ pub fn decode_dictionary_indices_rle(buf: &[u8], len: usize) -> Result<Vec64<u32
             if input.len() < bytes_in_run {
                 return Err(IoError::Format("truncated bit-packed run".into()));
             }
-            // decode all groups in this run 
+            // decode all groups in this run
             let mut scratch = vec![0u32; groups * 8];
             for bit in 0..bit_width {
                 for g in 0..groups {
@@ -321,10 +351,16 @@ mod tests {
 
     #[test]
     fn test_decode_dictionary_rle_invalid() {
-        assert!(matches!(decode_dictionary_indices_rle(&[], 1), Err(IoError::Format(_))));
+        assert!(matches!(
+            decode_dictionary_indices_rle(&[], 1),
+            Err(IoError::Format(_))
+        ));
         // bad bit_width
         let buf = &[0u8];
-        assert!(matches!(decode_dictionary_indices_rle(buf, 1), Err(IoError::Format(_))));
+        assert!(matches!(
+            decode_dictionary_indices_rle(buf, 1),
+            Err(IoError::Format(_))
+        ));
     }
 
     #[test]

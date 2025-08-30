@@ -10,13 +10,14 @@ use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::DEFAULT_FRAME_ALLOCATION_SIZE;
 use crate::enums::{IPCMessageProtocol, WriterState};
 use crate::models::encoders::ipc::protocol::{IPCFrame, IPCFrameEncoder};
-use crate::models::encoders::ipc::schema::{build_flatbuf_footer, build_flatbuf_schema, encode_flatbuf_dictionary, FooterBlockMeta};
+use crate::models::encoders::ipc::schema::build_flatbuf_recordbatch;
+use crate::models::encoders::ipc::schema::{
+    FooterBlockMeta, build_flatbuf_footer, build_flatbuf_schema, encode_flatbuf_dictionary,
+};
 use crate::traits::frame_encoder::FrameEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
-use minarrow::{Array, Bitmask, NumericArray, TextArray};
-use crate::models::encoders::ipc::schema::build_flatbuf_recordbatch;
 use crate::utils::{align_to, as_bytes};
-
+use minarrow::{Array, Bitmask, NumericArray, TextArray};
 
 /// Low-level, pull-based streaming Arrow IPC writer producing encoded frames in a standard `Vec<u8>` buffer.
 ///
@@ -47,7 +48,7 @@ pub type TableStreamEncoder64 = GTableStreamEncoder<Vec64<u8>>;
 /// See also: [`TableReader`] and [`TableStreamReader`] for corresponding read-side utilities.
 pub struct GTableStreamEncoder<B>
 where
-    B: StreamBuffer + 'static
+    B: StreamBuffer + 'static,
 {
     /// Arrow IPC protocol (file or stream)
     pub protocol: IPCMessageProtocol,
@@ -91,12 +92,12 @@ where
     pub finished: bool,
 
     /// Stored task waker for waking up poll_next when new data is pushed
-    pub waker: Option<Waker>
+    pub waker: Option<Waker>,
 }
 
 impl<B> GTableStreamEncoder<B>
 where
-    B: StreamBuffer
+    B: StreamBuffer,
 {
     /// Construct a new [`GenTableStreamWriter`] for the specified schema and protocol.
     ///
@@ -121,7 +122,7 @@ where
             total_len_offset: 0,
             global_offset: 0,
             finished: false,
-            waker: None
+            waker: None,
         }
     }
 
@@ -166,7 +167,10 @@ where
     /// Returns error if table shape or types are inconsistent with schema, or writer is closed.
     pub fn write_record_batch_frame(&mut self, tbl: &Table) -> io::Result<()> {
         if self.state == WriterState::Closed {
-            return Err(io::Error::new(io::ErrorKind::Other, "writer already finished"));
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "writer already finished",
+            ));
         }
         if self.state == WriterState::Fresh {
             self.write_schema_frame()?;
@@ -174,7 +178,7 @@ where
         if tbl.cols.len() != self.schema.len() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "table column count mismatch with writer schema"
+                "table column count mismatch with writer schema",
             ));
         }
         // Collect dictionary ids first to avoid borrowing self.schema during mutation
@@ -183,7 +187,11 @@ where
             .iter()
             .enumerate()
             .filter_map(|(col_idx, field)| {
-                if let ArrowType::Dictionary(_) = field.dtype { Some(col_idx as i64) } else { None }
+                if let ArrowType::Dictionary(_) = field.dtype {
+                    Some(col_idx as i64)
+                } else {
+                    None
+                }
             })
             .collect();
         for dict_id in dict_ids {
@@ -202,14 +210,14 @@ where
     ///
     /// # Errors
     /// Returns error if the dictionary was not registered.
-    pub (crate) fn write_dictionary_frame_if_needed(&mut self, id: i64) -> io::Result<()> {
+    pub(crate) fn write_dictionary_frame_if_needed(&mut self, id: i64) -> io::Result<()> {
         if self.written_dict_ids.contains(&id) {
             return Ok(());
         }
         let uniques = self.dictionaries.get(&id).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("dictionary id {id} not registered")
+                format!("dictionary id {id} not registered"),
             )
         })?;
         let (meta, body) = encode_flatbuf_dictionary(&mut self.fbb, id, uniques)?;
@@ -260,7 +268,9 @@ where
             footer_bytes: None,
         };
 
-        let (encoded, ipc_frame_metadata) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame).expect("IPC frame encoding failed");
+        let (encoded, ipc_frame_metadata) =
+            IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)
+                .expect("IPC frame encoding failed");
         debug_assert!(encoded.len() == ipc_frame_metadata.frame_len());
         if self.protocol == IPCMessageProtocol::File {
             // For file track buffer, track offset and block metadata
@@ -269,7 +279,7 @@ where
                 // yes - includes the header
                 metadata_len: ipc_frame_metadata.metadata_total_len() as u32
                     + ipc_frame_metadata.header_len as u32,
-                body_len: ipc_frame_metadata.body_total_len() as u64
+                body_len: ipc_frame_metadata.body_total_len() as u64,
             };
 
             match header_type {
@@ -309,7 +319,7 @@ where
                     &mut self.fbb,
                     &self.schema,
                     &self.blocks_dictionaries,
-                    &self.blocks_record_batches
+                    &self.blocks_record_batches,
                 )?;
                 let frame = IPCFrame {
                     meta: &[],
@@ -319,7 +329,8 @@ where
                     is_last,
                     footer_bytes: Some(&footer_bytes),
                 };
-                let (footer_frame, _) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
+                let (footer_frame, _) =
+                    IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
                 self.out_frames.push_back(footer_frame);
             }
             IPCMessageProtocol::Stream => {
@@ -333,7 +344,8 @@ where
                         is_last: true,
                         footer_bytes: None,
                     };
-                    let (eos_frame, _) = IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
+                    let (eos_frame, _) =
+                        IPCFrameEncoder::encode::<B>(&mut self.global_offset, &frame)?;
                     self.out_frames.push_back(eos_frame);
                 }
             }
@@ -352,10 +364,7 @@ where
     /// and returns the pair as `(meta, body)`.
     ///
     /// Errors if the table cannot be serialised.
-    pub fn encode_record_batch(
-        &mut self,
-        tbl: &Table
-    ) -> io::Result<(Vec<u8>, B)> {
+    pub fn encode_record_batch(&mut self, tbl: &Table) -> io::Result<(Vec<u8>, B)> {
         let mut fb_field_nodes = Vec::with_capacity(tbl.cols.len());
         let mut fb_buffers = Vec::new();
         let mut body = B::with_capacity(DEFAULT_FRAME_ALLOCATION_SIZE);
@@ -380,7 +389,7 @@ where
             tbl.n_rows,
             &fb_field_nodes,
             &fb_buffers,
-            body.len()
+            body.len(),
         )?;
         Ok((meta, body))
     }
@@ -412,7 +421,7 @@ where
         col_idx: usize,
         fb_field_nodes: &mut Vec<fbm::FieldNode>,
         fb_buffers: &mut Vec<fbm::Buffer>,
-        body: &mut B
+        body: &mut B,
     ) -> io::Result<()> {
         // Important: at first glance it looks like the Arrow IPC data is getting written
         // into the Flatbuffer, due to the `push_buffer` return type. That's not what's happening.
@@ -423,15 +432,27 @@ where
             Array::NumericArray(num) => {
                 let (data_bytes, null_bitmap) = match num {
                     #[cfg(feature = "extended_numeric_types")]
-                    NumericArray::Int8(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    NumericArray::Int8(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
                     #[cfg(feature = "extended_numeric_types")]
-                    NumericArray::Int16(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
-                    NumericArray::Int32(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
-                    NumericArray::Int64(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    NumericArray::Int16(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
+                    NumericArray::Int32(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
+                    NumericArray::Int64(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
                     #[cfg(feature = "extended_numeric_types")]
-                    NumericArray::UInt8(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    NumericArray::UInt8(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
                     #[cfg(feature = "extended_numeric_types")]
-                    NumericArray::UInt16(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    NumericArray::UInt16(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
                     NumericArray::UInt32(arr) => {
                         (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
                     }
@@ -447,7 +468,7 @@ where
                     _ => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            "unsupported numeric subtype"
+                            "unsupported numeric subtype",
                         ));
                     }
                 };
@@ -460,7 +481,7 @@ where
                     false,
                     fb_field_nodes,
                     fb_buffers,
-                    body
+                    body,
                 )
             }
             Array::BooleanArray(arr) => self.encode_field_buffers(
@@ -472,7 +493,7 @@ where
                 false,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             Array::TextArray(TextArray::String32(arr)) => self.encode_field_buffers(
                 field.nullable,
@@ -483,7 +504,7 @@ where
                 false,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             #[cfg(feature = "large_string")]
             Array::TextArray(TextArray::String64(arr)) => self.encode_field_buffers(
@@ -495,7 +516,7 @@ where
                 false,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             Array::TextArray(TextArray::Categorical32(arr)) => self.encode_field_buffers(
                 field.nullable,
@@ -506,7 +527,7 @@ where
                 true,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             #[cfg(feature = "extended_categorical")]
             Array::TextArray(TextArray::Categorical8(arr)) => self.encode_field_buffers(
@@ -518,7 +539,7 @@ where
                 true,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             #[cfg(feature = "extended_categorical")]
             Array::TextArray(TextArray::Categorical16(arr)) => self.encode_field_buffers(
@@ -530,7 +551,7 @@ where
                 true,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             #[cfg(feature = "extended_categorical")]
             Array::TextArray(TextArray::Categorical64(arr)) => self.encode_field_buffers(
@@ -542,17 +563,21 @@ where
                 true,
                 fb_field_nodes,
                 fb_buffers,
-                body
+                body,
             ),
             #[cfg(feature = "datetime")]
             Array::TemporalArray(temp) => {
                 let (data_bytes, null_bitmap) = match temp {
-                    minarrow::TemporalArray::Datetime32(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
-                    minarrow::TemporalArray::Datetime64(arr) => (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref()),
+                    minarrow::TemporalArray::Datetime32(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
+                    minarrow::TemporalArray::Datetime64(arr) => {
+                        (as_bytes(arr.data.as_slice()), arr.null_mask.as_ref())
+                    }
                     minarrow::TemporalArray::Null => {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            "null temporal array not supported"
+                            "null temporal array not supported",
                         ));
                     }
                 };
@@ -565,13 +590,13 @@ where
                     false,
                     fb_field_nodes,
                     fb_buffers,
-                    body
+                    body,
                 )
             }
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("unsupported column type in writer: {}", field.name)
-            ))
+                format!("unsupported column type in writer: {}", field.name),
+            )),
         }
     }
 
@@ -623,12 +648,11 @@ where
         fb_field_nodes.push(fbm::FieldNode::new(n_rows as i64, n_nulls as i64));
         Ok(())
     }
-
 }
 
 impl<B> Stream for GTableStreamEncoder<B>
 where
-    B: StreamBuffer + 'static + Unpin
+    B: StreamBuffer + 'static + Unpin,
 {
     type Item = io::Result<B>;
 
@@ -713,7 +737,6 @@ fn make_null_buffer<B: StreamBuffer>(
     }
 }
 
-
 /// The below are 'logical' unit tests confirming:
 /// - Unique dictionary IDs are respected.
 /// - The macro populates buffers and field nodes as intended.
@@ -728,7 +751,8 @@ mod tests {
 
     use minarrow::ffi::arrow_dtype::CategoricalIndexType;
     use minarrow::{
-        Array, Bitmask, Buffer, CategoricalArray, FieldArray, Field, IntegerArray, Table, TextArray, Vec64
+        Array, Bitmask, Buffer, CategoricalArray, Field, FieldArray, IntegerArray, Table,
+        TextArray, Vec64,
     };
     use tempfile::NamedTempFile;
 
@@ -745,12 +769,16 @@ mod tests {
         }
         Bitmask {
             bits: Buffer::from(Vec64::from_slice(&bits[..])),
-            len: valid.len()
+            len: valid.len(),
         }
     }
 
     fn dict_strs() -> Vec<String> {
-        vec!["apple".to_string(), "banana".to_string(), "pear".to_string()]
+        vec![
+            "apple".to_string(),
+            "banana".to_string(),
+            "pear".to_string(),
+        ]
     }
 
     fn make_schema(idx_ty: CategoricalIndexType, nullable: bool) -> Vec<Field> {
@@ -758,7 +786,7 @@ mod tests {
             name: "col".to_string(),
             dtype: ArrowType::Dictionary(idx_ty),
             nullable,
-            metadata: Default::default()
+            metadata: Default::default(),
         }]
     }
 
@@ -766,7 +794,7 @@ mod tests {
         Table {
             cols: vec![arr],
             n_rows,
-            name: "tbl".to_string()
+            name: "tbl".to_string(),
         }
     }
 
@@ -791,13 +819,13 @@ mod tests {
 
         let mut writer = TableStreamEncoder::new(
             make_schema(CategoricalIndexType::UInt32, true),
-            IPCMessageProtocol::Stream
+            IPCMessageProtocol::Stream,
         );
 
         let arr = CategoricalArray {
             data: Buffer::from(Vec64::from_slice(&[1u32, 0, 2, 1])),
             unique_values: Vec64::from(dict_strs()),
-            null_mask: Some(make_bitmask(&[true, false, true, true]))
+            null_mask: Some(make_bitmask(&[true, false, true, true])),
         };
 
         writer.register_dictionary(0, dict_strs());
@@ -808,11 +836,11 @@ mod tests {
                     name: "col".to_string(),
                     dtype: ArrowType::Dictionary(CategoricalIndexType::UInt32),
                     nullable: true,
-                    metadata: Default::default()
+                    metadata: Default::default(),
                 },
-                Array::TextArray(TextArray::Categorical32(Arc::new(arr)))
+                Array::TextArray(TextArray::Categorical32(Arc::new(arr))),
             ),
-            4
+            4,
         );
 
         writer.write_record_batch_frame(&tbl).unwrap();
@@ -972,13 +1000,13 @@ mod tests {
 
         let mut writer = TableStreamEncoder::new(
             make_schema(CategoricalIndexType::UInt32, true),
-            IPCMessageProtocol::File
+            IPCMessageProtocol::File,
         );
 
         let arr = CategoricalArray {
             data: Buffer::from(Vec64::from_slice(&[0u32, 1, 1, 2])),
             unique_values: Vec64::from(dict_strs()),
-            null_mask: Some(make_bitmask(&[true, false, true, true]))
+            null_mask: Some(make_bitmask(&[true, false, true, true])),
         };
 
         writer.register_dictionary(0, dict_strs());
@@ -989,11 +1017,11 @@ mod tests {
                     name: "col".to_string(),
                     dtype: ArrowType::Dictionary(CategoricalIndexType::UInt32),
                     nullable: true,
-                    metadata: Default::default()
+                    metadata: Default::default(),
                 },
-                Array::TextArray(TextArray::Categorical32(Arc::new(arr)))
+                Array::TextArray(TextArray::Categorical32(Arc::new(arr))),
             ),
-            4
+            4,
         );
 
         writer.write_record_batch_frame(&tbl).unwrap();
@@ -1010,12 +1038,21 @@ mod tests {
 
         let buf = read_file_bytes(&path);
         println!("Written buffer:\n{:?}", buf);
-        assert!(buf.starts_with(ARROW_MAGIC_NUMBER_PADDED), "file must start with Arrow magic");
-        assert!(buf.ends_with(ARROW_MAGIC_NUMBER), "file must end with Arrow magic");
+        assert!(
+            buf.starts_with(ARROW_MAGIC_NUMBER_PADDED),
+            "file must start with Arrow magic"
+        );
+        assert!(
+            buf.ends_with(ARROW_MAGIC_NUMBER),
+            "file must end with Arrow magic"
+        );
         println!("Written buffer len : {:?}", buf.len());
         // We add 2 for the end magic marker, and the 3rd 4-byte contination marker.
         // This is more of a sanity check than a starting alignment check.
-        assert!((buf.len() + 4 + 2) % 8 == 0, "Arrow IPC file must be a multiple of 8 bytes");
+        assert!(
+            (buf.len() + 4 + 2) % 8 == 0,
+            "Arrow IPC file must be a multiple of 8 bytes"
+        );
     }
 
     #[test]
@@ -1024,14 +1061,12 @@ mod tests {
         let path = temp.path().to_path_buf();
 
         // Create schema with a single Int32 (non-dictionary) column
-        let schema = vec![
-            Field {
-                name: "col".to_string(),
-                dtype: ArrowType::Int32,
-                nullable: true,
-                metadata: Default::default(),
-            }
-        ];
+        let schema = vec![Field {
+            name: "col".to_string(),
+            dtype: ArrowType::Int32,
+            nullable: true,
+            metadata: Default::default(),
+        }];
 
         let mut writer = TableStreamEncoder64::new(schema.clone(), IPCMessageProtocol::File);
 
@@ -1051,9 +1086,9 @@ mod tests {
                     nullable: true,
                     metadata: Default::default(),
                 },
-                Array::NumericArray(arr)
+                Array::NumericArray(arr),
             ),
-            4
+            4,
         );
 
         writer.write_record_batch_frame(&tbl).unwrap();
@@ -1070,8 +1105,13 @@ mod tests {
 
         let buf = read_file_bytes(&path);
         println!("Written buffer:\n{:?}", buf);
-        assert!(buf.starts_with(ARROW_MAGIC_NUMBER_PADDED), "file must start with Arrow magic");
-        assert!(buf.ends_with(ARROW_MAGIC_NUMBER), "file must end with Arrow magic");
+        assert!(
+            buf.starts_with(ARROW_MAGIC_NUMBER_PADDED),
+            "file must start with Arrow magic"
+        );
+        assert!(
+            buf.ends_with(ARROW_MAGIC_NUMBER),
+            "file must end with Arrow magic"
+        );
     }
-
 }

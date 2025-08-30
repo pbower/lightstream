@@ -1,7 +1,7 @@
 //! Error types for parquet IO
 
-use std::{fmt, io, error};
 use std::string::FromUtf8Error;
+use std::{error, fmt, io};
 
 /// Unified error type for all parquet_writer operations.
 #[derive(Debug)]
@@ -31,7 +31,7 @@ pub enum IoError {
     Format(String),
 
     /// Unsupported encoding error
-    UnsupportedEncoding(String)
+    UnsupportedEncoding(String),
 }
 
 impl fmt::Display for IoError {

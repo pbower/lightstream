@@ -1,7 +1,7 @@
-use std::io;
 use crate::models::frames::tlv_frame::TLVFrame;
 use crate::traits::frame_encoder::FrameEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
+use std::io;
 // use crate::utils::align_to;
 
 pub struct TLVEncoder;
@@ -11,10 +11,16 @@ impl FrameEncoder for TLVEncoder {
     type Metadata = ();
 
     /// Encode a TLV frame as [type (1 byte)] [length (4 LE bytes)] [value bytes]
-    fn encode<'a, B: StreamBuffer>(global_offset: &mut usize, frame: &Self::Frame<'a>) -> io::Result<(B, Self::Metadata)> {
+    fn encode<'a, B: StreamBuffer>(
+        global_offset: &mut usize,
+        frame: &Self::Frame<'a>,
+    ) -> io::Result<(B, Self::Metadata)> {
         let len = frame.value.len();
         if len > u32::MAX as usize {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "Value too large for TLV frame"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Value too large for TLV frame",
+            ));
         }
 
         // 1 + 4 + value.len()
@@ -41,7 +47,10 @@ mod tests {
     #[test]
     fn test_tlv_encode_basic() {
         let value = [0xAA, 0xBB, 0xCC];
-        let frame = TLVFrame { t: 42, value: &value };
+        let frame = TLVFrame {
+            t: 42,
+            value: &value,
+        };
 
         let (buf, _) = TLVEncoder::encode::<Vec64<u8>>(&mut 0, &frame).unwrap();
         assert_eq!(buf[0], 42);
@@ -62,7 +71,10 @@ mod tests {
     #[test]
     fn test_tlv_encode_large() {
         let large = vec![1u8; 65536];
-        let frame = TLVFrame { t: 1, value: &large };
+        let frame = TLVFrame {
+            t: 1,
+            value: &large,
+        };
         let (buf, _) = TLVEncoder::encode::<Vec64<u8>>(&mut 0, &frame).unwrap();
         assert_eq!(buf[0], 1);
         assert_eq!(&buf[1..5], &(65536u32.to_le_bytes()));

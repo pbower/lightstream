@@ -10,9 +10,7 @@ use std::path::Path;
 
 use minarrow::{SuperTable, Table};
 
-use crate::models::encoders::csv::{
-    encode_supertable_csv, encode_table_csv, CsvEncodeOptions,
-};
+use crate::models::encoders::csv::{CsvEncodeOptions, encode_supertable_csv, encode_table_csv};
 
 /// `CsvWriter` wraps any `io::Write` and exposes methods to write
 /// Minarrow `Table` or `SuperTable` as CSV, using customizable options.
@@ -91,10 +89,10 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::models::encoders::csv::CsvEncodeOptions;
     use minarrow::{
         Array, Bitmask, Buffer, Field, FieldArray, NumericArray, Table, TextArray, vec64,
     };
-    use crate::models::encoders::csv::CsvEncodeOptions;
 
     fn make_test_table() -> Table {
         let int_col = FieldArray {
@@ -103,12 +101,14 @@ mod tests {
                 dtype: minarrow::ArrowType::Int32,
                 nullable: false,
                 metadata: Default::default(),
-            }.into(),
+            }
+            .into(),
             array: Array::NumericArray(NumericArray::Int32(
                 minarrow::IntegerArray {
                     data: Buffer::from(vec64![1, 2, 3]),
                     null_mask: None,
-                }.into()
+                }
+                .into(),
             )),
             null_count: 0,
         };
@@ -118,13 +118,15 @@ mod tests {
                 dtype: minarrow::ArrowType::String,
                 nullable: true,
                 metadata: Default::default(),
-            }.into(),
+            }
+            .into(),
             array: Array::TextArray(TextArray::String32(
                 minarrow::StringArray {
                     offsets: Buffer::from(vec64![0u32, 3, 3, 7]),
                     data: Buffer::from_vec64(b"foo\0barbaz".to_vec().into()),
                     null_mask: Some(Bitmask::from_bools(&[true, false, true])),
-                }.into()
+                }
+                .into(),
             )),
             null_count: 1,
         };
@@ -172,7 +174,8 @@ mod tests {
     fn test_csv_writer_supertable() {
         let t1 = make_test_table();
         let t2 = make_test_table();
-        let supertbl = SuperTable::from_batches(vec![Arc::new(t1.clone()), Arc::new(t2.clone())], None);
+        let supertbl =
+            SuperTable::from_batches(vec![Arc::new(t1.clone()), Arc::new(t2.clone())], None);
         let mut writer = CsvWriter::new_vec();
         writer.write_supertable(&supertbl).unwrap();
         let csv = String::from_utf8(writer.into_inner()).unwrap();
@@ -195,5 +198,4 @@ mod tests {
         let contents = std::fs::read_to_string(tmp.path()).unwrap();
         assert!(contents.contains("ints,strs"));
     }
-
 }

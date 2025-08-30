@@ -4,8 +4,7 @@
 //! the IPC Protocol as outlined [here](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc)
 //!
 //! These work with the modules under src/arrow/* compiled via src/flatb/* .
-use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self};
 
 use minarrow::ffi::arrow_dtype::CategoricalIndexType;
 use minarrow::{ArrowType, Field};
@@ -27,7 +26,7 @@ use crate::traits::stream_buffer::StreamBuffer;
 /// Returns error for any unsupported Arrow type.
 pub fn build_flatbuf_schema<'a>(
     fbb: &'a mut flatbuffers::FlatBufferBuilder<'static>,
-    schema: &[Field]
+    schema: &[Field],
 ) -> io::Result<Vec<u8>> {
     fbb.reset();
     let fb_fields = build_flatbuf_fields(fbb, schema)?;
@@ -40,8 +39,8 @@ pub fn build_flatbuf_schema<'a>(
             endianness: fbm::Endianness::Little,
             fields: Some(fields_vec),
             custom_metadata: None,
-            features: None // features: Some(features_vec)
-        }
+            features: None, // features: Some(features_vec)
+        },
     );
     let msg = fbm::Message::create(
         fbb,
@@ -50,15 +49,13 @@ pub fn build_flatbuf_schema<'a>(
             header_type: fbm::MessageHeader::Schema,
             header: Some(schema_obj.as_union_value()),
             bodyLength: 0,
-            custom_metadata: None
-        }
+            custom_metadata: None,
+        },
     );
     fbb.finish(msg, None);
     let flatbuffers = fbb.finished_data().to_vec();
     println!("Schema flatbuffer size: {}", flatbuffers.len());
 
-    let mut file = File::create("schema_message.bin")?;
-    file.write_all(&flatbuffers)?;
     Ok(flatbuffers)
 }
 
@@ -79,7 +76,7 @@ pub fn build_flatbuf_schema<'a>(
 /// Returns error for any unsupported Arrow type.
 fn build_flatbuf_fields<'fbb>(
     fbb: &mut flatbuffers::FlatBufferBuilder<'fbb>,
-    schema: &[Field]
+    schema: &[Field],
 ) -> io::Result<Vec<flatbuffers::WIPOffset<fbm::Field<'fbb>>>> {
     let mut fb_fields = Vec::with_capacity(schema.len());
 
@@ -108,7 +105,7 @@ fn build_flatbuf_fields<'fbb>(
 fn build_flatbuf_field<'fbb>(
     fbb: &mut flatbuffers::FlatBufferBuilder<'fbb>,
     field: &Field,
-    col_idx: usize
+    col_idx: usize,
 ) -> io::Result<flatbuffers::WIPOffset<fbm::Field<'fbb>>> {
     // Create field name
     let fb_name = fbb.create_string(&field.name);
@@ -123,51 +120,103 @@ fn build_flatbuf_field<'fbb>(
     let (fb_type_type, fb_type_offset, fb_dict) = match &field.dtype {
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::Int8 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 8, is_signed: true });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 8,
+                    is_signed: true,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::Int16 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 16, is_signed: true });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 16,
+                    is_signed: true,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int32 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 32, is_signed: true });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 32,
+                    is_signed: true,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int64 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 64, is_signed: true });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 64,
+                    is_signed: true,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::UInt8 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 8, is_signed: false });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 8,
+                    is_signed: false,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::UInt16 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 16, is_signed: false });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 16,
+                    is_signed: false,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt32 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 32, is_signed: false });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 32,
+                    is_signed: false,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt64 => {
-            let int = fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: 64, is_signed: false });
+            let int = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: 64,
+                    is_signed: false,
+                },
+            );
             (fbm::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Float32 => {
             let fp = fbm::FloatingPoint::create(
                 fbb,
-                &fbm::FloatingPointArgs { precision: fbm::Precision::SINGLE }
+                &fbm::FloatingPointArgs {
+                    precision: fbm::Precision::SINGLE,
+                },
             );
             (fbm::Type::FloatingPoint, Some(fp.as_union_value()), None)
         }
         ArrowType::Float64 => {
             let fp = fbm::FloatingPoint::create(
                 fbb,
-                &fbm::FloatingPointArgs { precision: fbm::Precision::DOUBLE }
+                &fbm::FloatingPointArgs {
+                    precision: fbm::Precision::DOUBLE,
+                },
             );
             (fbm::Type::FloatingPoint, Some(fp.as_union_value()), None)
         }
@@ -186,12 +235,22 @@ fn build_flatbuf_field<'fbb>(
         }
         #[cfg(feature = "datetime")]
         ArrowType::Date32 => {
-            let date = fbm::Date::create(fbb, &fbm::DateArgs { unit: fbm::DateUnit::DAY });
+            let date = fbm::Date::create(
+                fbb,
+                &fbm::DateArgs {
+                    unit: fbm::DateUnit::DAY,
+                },
+            );
             (fbm::Type::Date, Some(date.as_union_value()), None)
         }
         #[cfg(feature = "datetime")]
         ArrowType::Date64 => {
-            let date = fbm::Date::create(fbb, &fbm::DateArgs { unit: fbm::DateUnit::MILLISECOND });
+            let date = fbm::Date::create(
+                fbb,
+                &fbm::DateArgs {
+                    unit: fbm::DateUnit::MILLISECOND,
+                },
+            );
             (fbm::Type::Date, Some(date.as_union_value()), None)
         }
         ArrowType::Dictionary(idx_ty) => {
@@ -203,12 +262,17 @@ fn build_flatbuf_field<'fbb>(
                 #[cfg(feature = "extended_categorical")]
                 CategoricalIndexType::UInt16 => 16,
                 #[cfg(feature = "extended_categorical")]
-                CategoricalIndexType::UInt8 => 8
+                CategoricalIndexType::UInt8 => 8,
             };
 
             // Create the index type Int
-            let index_type =
-                fbm::Int::create(fbb, &fbm::IntArgs { bitWidth: idx_width, is_signed: false });
+            let index_type = fbm::Int::create(
+                fbb,
+                &fbm::IntArgs {
+                    bitWidth: idx_width,
+                    is_signed: false,
+                },
+            );
 
             // Create dictionary encoding with column index as ID
             let dict = fbm::DictionaryEncoding::create(
@@ -217,19 +281,23 @@ fn build_flatbuf_field<'fbb>(
                     id: col_idx as i64,
                     indexType: Some(index_type),
                     isOrdered: false,
-                    dictionaryKind: fbm::DictionaryKind::DenseArray
-                }
+                    dictionaryKind: fbm::DictionaryKind::DenseArray,
+                },
             );
 
             // For dictionary-encoded fields, the type is Utf8 (string dictionary)
             // but the physical storage is Int (indices)
             let utf8_type = fbm::Utf8::create(fbb, &fbm::Utf8Args {});
-            (fbm::Type::Utf8, Some(utf8_type.as_union_value()), Some(dict))
+            (
+                fbm::Type::Utf8,
+                Some(utf8_type.as_union_value()),
+                Some(dict),
+            )
         }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("unsupported type in schema: {}", field.name)
+                format!("unsupported type in schema: {}", field.name),
             ));
         }
     };
@@ -244,8 +312,8 @@ fn build_flatbuf_field<'fbb>(
             type_: fb_type_offset,
             dictionary: fb_dict,
             children: Some(children), // Always include children, even if empty
-            custom_metadata
-        }
+            custom_metadata,
+        },
     ))
 }
 
@@ -261,12 +329,12 @@ fn build_flatbuf_field<'fbb>(
 ///
 /// # Errors
 /// Returns error if unsupported column type or shape mismatch.
-pub (crate) fn build_flatbuf_recordbatch<'a>(
+pub(crate) fn build_flatbuf_recordbatch<'a>(
     fbb: &'a mut flatbuffers::FlatBufferBuilder<'static>,
     n_rows: usize,
     fb_field_nodes: &[fbm::FieldNode],
     fb_buffers: &[fbm::Buffer],
-    body_len: usize
+    body_len: usize,
 ) -> io::Result<Vec<u8>> {
     fbb.reset();
     let fb_nodes_vec = fbb.create_vector(fb_field_nodes);
@@ -278,8 +346,8 @@ pub (crate) fn build_flatbuf_recordbatch<'a>(
             nodes: Some(fb_nodes_vec),
             buffers: Some(fb_buffers_vec),
             compression: None,
-            variadicBufferCounts: None
-        }
+            variadicBufferCounts: None,
+        },
     );
     let meta = fbm::Message::create(
         fbb,
@@ -288,8 +356,8 @@ pub (crate) fn build_flatbuf_recordbatch<'a>(
             header_type: fbm::MessageHeader::RecordBatch,
             header: Some(rb.as_union_value()),
             bodyLength: body_len as i64,
-            custom_metadata: None
-        }
+            custom_metadata: None,
+        },
     );
     fbb.finish(meta, None);
     Ok(fbb.finished_data().to_vec())
@@ -309,7 +377,7 @@ pub (crate) fn build_flatbuf_recordbatch<'a>(
 pub fn encode_flatbuf_dictionary<'a, B: StreamBuffer>(
     fbb: &'a mut flatbuffers::FlatBufferBuilder<'static>,
     id: i64,
-    uniques: &[String]
+    uniques: &[String],
 ) -> io::Result<(Vec<u8>, B)> {
     debug_println!("Encoding flatbuffers dictionary.");
     fbb.reset();
@@ -364,13 +432,17 @@ pub fn encode_flatbuf_dictionary<'a, B: StreamBuffer>(
             nodes: Some(field_nodes_vec),
             buffers: Some(buffers_vec),
             compression: None,
-            variadicBufferCounts: None
-        }
+            variadicBufferCounts: None,
+        },
     );
 
     let dict_batch = fbm::DictionaryBatch::create(
         fbb,
-        &fbm::DictionaryBatchArgs { id, data: Some(rb), isDelta: false }
+        &fbm::DictionaryBatchArgs {
+            id,
+            data: Some(rb),
+            isDelta: false,
+        },
     );
 
     let msg = fbm::Message::create(
@@ -380,8 +452,8 @@ pub fn encode_flatbuf_dictionary<'a, B: StreamBuffer>(
             header_type: fbm::MessageHeader::DictionaryBatch,
             header: Some(dict_batch.as_union_value()),
             bodyLength: body.len() as i64,
-            custom_metadata: None
-        }
+            custom_metadata: None,
+        },
     );
 
     fbb.finish(msg, None);
@@ -405,7 +477,7 @@ pub fn encode_flatbuf_dictionary<'a, B: StreamBuffer>(
 /// Returns error for any unsupported Arrow type.
 fn build_flatbuf_fields_file<'fbb>(
     fbb: &mut flatbuffers::FlatBufferBuilder<'fbb>,
-    schema: &[Field]
+    schema: &[Field],
 ) -> io::Result<Vec<flatbuffers::WIPOffset<fbf::Field<'fbb>>>> {
     let mut fb_fields = Vec::with_capacity(schema.len());
     for (col_idx, f) in schema.iter().enumerate() {
@@ -431,7 +503,7 @@ fn build_flatbuf_fields_file<'fbb>(
 fn build_flatbuf_field_file<'fbb>(
     fbb: &mut flatbuffers::FlatBufferBuilder<'fbb>,
     field: &Field,
-    col_idx: usize
+    col_idx: usize,
 ) -> io::Result<flatbuffers::WIPOffset<fbf::Field<'fbb>>> {
     let fb_name = fbb.create_string(&field.name);
     let children = fbb.create_vector::<flatbuffers::WIPOffset<fbf::Field>>(&[]);
@@ -440,51 +512,103 @@ fn build_flatbuf_field_file<'fbb>(
     let (fb_type_type, fb_type_offset, fb_dict) = match &field.dtype {
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::Int8 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 8, is_signed: true });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 8,
+                    is_signed: true,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::Int16 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 16, is_signed: true });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 16,
+                    is_signed: true,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int32 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 32, is_signed: true });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 32,
+                    is_signed: true,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Int64 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 64, is_signed: true });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 64,
+                    is_signed: true,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::UInt8 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 8, is_signed: false });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 8,
+                    is_signed: false,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         #[cfg(feature = "extended_numeric_types")]
         ArrowType::UInt16 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 16, is_signed: false });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 16,
+                    is_signed: false,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt32 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 32, is_signed: false });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 32,
+                    is_signed: false,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::UInt64 => {
-            let int = fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: 64, is_signed: false });
+            let int = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: 64,
+                    is_signed: false,
+                },
+            );
             (fbf::Type::Int, Some(int.as_union_value()), None)
         }
         ArrowType::Float32 => {
             let fp = fbf::FloatingPoint::create(
                 fbb,
-                &fbf::FloatingPointArgs { precision: fbf::Precision::SINGLE }
+                &fbf::FloatingPointArgs {
+                    precision: fbf::Precision::SINGLE,
+                },
             );
             (fbf::Type::FloatingPoint, Some(fp.as_union_value()), None)
         }
         ArrowType::Float64 => {
             let fp = fbf::FloatingPoint::create(
                 fbb,
-                &fbf::FloatingPointArgs { precision: fbf::Precision::DOUBLE }
+                &fbf::FloatingPointArgs {
+                    precision: fbf::Precision::DOUBLE,
+                },
             );
             (fbf::Type::FloatingPoint, Some(fp.as_union_value()), None)
         }
@@ -503,12 +627,22 @@ fn build_flatbuf_field_file<'fbb>(
         }
         #[cfg(feature = "datetime")]
         ArrowType::Date32 => {
-            let date = fbf::Date::create(fbb, &fbf::DateArgs { unit: fbf::DateUnit::DAY });
+            let date = fbf::Date::create(
+                fbb,
+                &fbf::DateArgs {
+                    unit: fbf::DateUnit::DAY,
+                },
+            );
             (fbf::Type::Date, Some(date.as_union_value()), None)
         }
         #[cfg(feature = "datetime")]
         ArrowType::Date64 => {
-            let date = fbf::Date::create(fbb, &fbf::DateArgs { unit: fbf::DateUnit::MILLISECOND });
+            let date = fbf::Date::create(
+                fbb,
+                &fbf::DateArgs {
+                    unit: fbf::DateUnit::MILLISECOND,
+                },
+            );
             (fbf::Type::Date, Some(date.as_union_value()), None)
         }
         ArrowType::Dictionary(idx_ty) => {
@@ -519,11 +653,16 @@ fn build_flatbuf_field_file<'fbb>(
                 #[cfg(feature = "extended_categorical")]
                 CategoricalIndexType::UInt16 => 16,
                 #[cfg(feature = "extended_categorical")]
-                CategoricalIndexType::UInt8 => 8
+                CategoricalIndexType::UInt8 => 8,
             };
 
-            let index_type =
-                fbf::Int::create(fbb, &fbf::IntArgs { bitWidth: idx_width, is_signed: false });
+            let index_type = fbf::Int::create(
+                fbb,
+                &fbf::IntArgs {
+                    bitWidth: idx_width,
+                    is_signed: false,
+                },
+            );
 
             let dict = fbf::DictionaryEncoding::create(
                 fbb,
@@ -531,18 +670,22 @@ fn build_flatbuf_field_file<'fbb>(
                     id: col_idx as i64,
                     indexType: Some(index_type),
                     isOrdered: false,
-                    dictionaryKind: fbf::DictionaryKind::DenseArray
-                }
+                    dictionaryKind: fbf::DictionaryKind::DenseArray,
+                },
             );
 
             // File footer uses Utf8 type for dictionary fields
             let utf8_type = fbf::Utf8::create(fbb, &fbf::Utf8Args {});
-            (fbf::Type::Utf8, Some(utf8_type.as_union_value()), Some(dict))
+            (
+                fbf::Type::Utf8,
+                Some(utf8_type.as_union_value()),
+                Some(dict),
+            )
         }
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("unsupported type in schema: {}", field.name)
+                format!("unsupported type in schema: {}", field.name),
             ));
         }
     };
@@ -556,8 +699,8 @@ fn build_flatbuf_field_file<'fbb>(
             type_: fb_type_offset,
             dictionary: fb_dict,
             children: Some(children),
-            custom_metadata
-        }
+            custom_metadata,
+        },
     ))
 }
 
@@ -566,7 +709,7 @@ fn build_flatbuf_field_file<'fbb>(
 pub struct FooterBlockMeta {
     pub offset: u64,
     pub metadata_len: u32,
-    pub body_len: u64
+    pub body_len: u64,
 }
 
 /// Build the Arrow file footer FlatBuffer message, including batch and dictionary block metadata.
@@ -585,7 +728,7 @@ pub fn build_flatbuf_footer<'a>(
     fbb: &'a mut flatbuffers::FlatBufferBuilder<'static>,
     schema: &[Field],
     blocks_dictionaries: &[FooterBlockMeta],
-    blocks_record_batches: &[FooterBlockMeta]
+    blocks_record_batches: &[FooterBlockMeta],
 ) -> io::Result<Vec<u8>> {
     fbb.reset();
     let fb_dict_blocks: Vec<_> = blocks_dictionaries
@@ -606,8 +749,8 @@ pub fn build_flatbuf_footer<'a>(
             endianness: fbf::Endianness::Little,
             fields: Some(fields_vec),
             custom_metadata: None,
-            features: None
-        }
+            features: None,
+        },
     );
     let footer = fbf::Footer::create(
         fbb,
@@ -616,8 +759,8 @@ pub fn build_flatbuf_footer<'a>(
             schema: Some(schema_obj),
             dictionaries: Some(dict_vec),
             recordBatches: Some(batch_vec),
-            custom_metadata: None
-        }
+            custom_metadata: None,
+        },
     );
     fbb.finish(footer, None);
     Ok(fbb.finished_data().to_vec())

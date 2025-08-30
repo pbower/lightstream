@@ -1,7 +1,8 @@
 use std::io;
 
 use crate::constants::{
-    ARROW_MAGIC_NUMBER, ARROW_MAGIC_NUMBER_PADDED, CONTINUATION_MARKER_LEN, DEFAULT_FRAME_ALLOCATION_SIZE, EOS_MARKER_LEN, METADATA_SIZE_PREFIX
+    ARROW_MAGIC_NUMBER, ARROW_MAGIC_NUMBER_PADDED, CONTINUATION_MARKER_LEN,
+    DEFAULT_FRAME_ALLOCATION_SIZE, EOS_MARKER_LEN, METADATA_SIZE_PREFIX,
 };
 use crate::enums::IPCMessageProtocol;
 use crate::models::frames::ipc_message::IPCFrameMetadata;
@@ -38,8 +39,10 @@ impl FrameEncoder for IPCFrameEncoder {
     /// <metadata_flatbuffer: bytes>
     /// <padding>
     /// <message body>
-    fn encode<'a, B: StreamBuffer>(global_offset: &mut usize, frame: &Self::Frame<'a>) -> io::Result<(B, Self::Metadata)> {
-
+    fn encode<'a, B: StreamBuffer>(
+        global_offset: &mut usize,
+        frame: &Self::Frame<'a>,
+    ) -> io::Result<(B, Self::Metadata)> {
         let mut out = B::with_capacity(DEFAULT_FRAME_ALLOCATION_SIZE);
         let mut ipc_frame_metadata = IPCFrameMetadata::default();
 
@@ -52,7 +55,13 @@ impl FrameEncoder for IPCFrameEncoder {
         // Make sure it's not a last EOS marker, or a no-op
         let write_msg_frame = !frame.meta.is_empty() || !frame.body.is_empty();
         if write_msg_frame {
-            Self::append_message_frame(global_offset, &mut out, frame.meta, frame.body, &mut ipc_frame_metadata);
+            Self::append_message_frame(
+                global_offset,
+                &mut out,
+                frame.meta,
+                frame.body,
+                &mut ipc_frame_metadata,
+            );
         };
 
         if frame.protocol == IPCMessageProtocol::File && frame.is_last {
@@ -61,12 +70,15 @@ impl FrameEncoder for IPCFrameEncoder {
             Self::append_file_footer(
                 global_offset,
                 &mut out,
-                frame.footer_bytes
+                frame
+                    .footer_bytes
                     .expect("`is_last` must include footer bytes for IPCMessageProtocol::File."),
-                &mut ipc_frame_metadata
+                &mut ipc_frame_metadata,
             );
-            ipc_frame_metadata.footer_len = frame.footer_bytes.expect("Expected footer byte for last message").len();
-
+            ipc_frame_metadata.footer_len = frame
+                .footer_bytes
+                .expect("Expected footer byte for last message")
+                .len();
         }
         if frame.protocol == IPCMessageProtocol::Stream && frame.is_last {
             Self::append_eos_marker(global_offset, &mut out, &mut ipc_frame_metadata);
@@ -76,10 +88,14 @@ impl FrameEncoder for IPCFrameEncoder {
 }
 
 impl IPCFrameEncoder {
-
     /// Appends the Arrow file footer to the given output buffer, including
     /// the length prefix and final magic string, ensuring correct 8-byte alignment.
-    pub fn append_file_footer<B: StreamBuffer>(global_offset: &mut usize, out: &mut B, footer_bytes: &[u8], ipc_frame_meta: &mut IPCFrameMetadata) {
+    pub fn append_file_footer<B: StreamBuffer>(
+        global_offset: &mut usize,
+        out: &mut B,
+        footer_bytes: &[u8],
+        ipc_frame_meta: &mut IPCFrameMetadata,
+    ) {
         out.extend_from_slice(footer_bytes);
         *global_offset += footer_bytes.len();
         out.extend_from_slice(&(footer_bytes.len() as u32).to_le_bytes());
@@ -92,7 +108,11 @@ impl IPCFrameEncoder {
     }
 
     /// Append the end-of-stream marker: 0xFFFFFFFF followed by 0x00000000
-    fn append_eos_marker<B: StreamBuffer>(global_offset: &mut usize, out: &mut B, ipc_frame_meta: &mut IPCFrameMetadata) {
+    fn append_eos_marker<B: StreamBuffer>(
+        global_offset: &mut usize,
+        out: &mut B,
+        ipc_frame_meta: &mut IPCFrameMetadata,
+    ) {
         out.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes()); // Continuation marker
         out.extend_from_slice(&0u32.to_le_bytes()); // Zero metadata length
         ipc_frame_meta.eos_len = EOS_MARKER_LEN;
@@ -105,9 +125,8 @@ impl IPCFrameEncoder {
         out: &mut B,
         meta: &[u8],
         body: &[u8],
-        ipc_frame_meta: &mut IPCFrameMetadata
+        ipc_frame_meta: &mut IPCFrameMetadata,
     ) {
-
         // Calculate all pads and total size so we can reserve once
         ipc_frame_meta.header_len = CONTINUATION_MARKER_LEN + METADATA_SIZE_PREFIX; // bytes (continuation u32 + metadata_size u32)
         ipc_frame_meta.meta_len = meta.len();
@@ -128,7 +147,8 @@ impl IPCFrameEncoder {
         ipc_frame_meta.meta_pad = align_to::<B>(*global_offset as usize + 4 + meta.len());
 
         // Metadata size - 4 bytes
-        let metadata_size = &(ipc_frame_meta.meta_len as u32 + ipc_frame_meta.meta_pad as u32).to_le_bytes();
+        let metadata_size =
+            &(ipc_frame_meta.meta_len as u32 + ipc_frame_meta.meta_pad as u32).to_le_bytes();
         out.extend_from_slice(metadata_size);
         *global_offset += 4;
         //debug_println!("Metadata size :\n{:?}", metadata_size);
@@ -141,7 +161,7 @@ impl IPCFrameEncoder {
 
         // Pad metadata
         if ipc_frame_meta.meta_pad != 0 {
-            out.extend_from_slice(&vec![0u8; ipc_frame_meta.meta_pad ]);
+            out.extend_from_slice(&vec![0u8; ipc_frame_meta.meta_pad]);
             //debug_println!("Pad:\n{:?}", &vec![0u8; ipc_frame_meta.meta_pad]);
             *global_offset += ipc_frame_meta.meta_pad;
         }
@@ -155,7 +175,7 @@ impl IPCFrameEncoder {
         // This should not need to do anything because of `push_buffer` which
         // pads the individual body buffers, but is here for completeness.
         ipc_frame_meta.body_pad = align_to::<B>(*global_offset);
-        
+
         if ipc_frame_meta.body_pad != 0 {
             out.extend_from_slice(&vec![0u8; ipc_frame_meta.body_pad]);
             //debug_println!("Body_pad:\n{:?}", &vec![0u8; ipc_frame_meta.body_pad]);
@@ -164,15 +184,13 @@ impl IPCFrameEncoder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
 
-    use minarrow::{vec64, Vec64};
+    use minarrow::{Vec64, vec64};
 
     use super::*;
     use crate::enums::IPCMessageProtocol;
-
 
     #[test]
     fn test_ipc_frame_metadata_calculations() {
@@ -202,7 +220,6 @@ mod tests {
 
         assert_eq!(out.len(), 0);
         assert_eq!(metadata.frame_len(), 0);
-
     }
 
     #[test]
@@ -268,7 +285,6 @@ mod tests {
 
     #[test]
     fn test_file_regular_frame() {
-
         let meta_buf = vec![0u8; 120];
         let body_buf = vec![1u8; 16];
         let frame = IPCFrame {
@@ -381,7 +397,8 @@ mod tests {
 
             assert_eq!(
                 metadata.meta_pad, expected_pad,
-                "Failed for meta_size={}", meta_size
+                "Failed for meta_size={}",
+                meta_size
             );
 
             // Verify the actual padding bytes are zeros
@@ -398,10 +415,10 @@ mod tests {
         let meta = vec![0u8; 8]; // Small aligned metadata
 
         let test_cases = vec![
-            (1, 7),   // 1 byte -> 7 padding
-            (8, 0),   // 8 bytes -> 0 padding
-            (15, 1),  // 15 bytes -> 1 padding
-            (16, 0),  // 16 bytes -> 0 padding
+            (1, 7),  // 1 byte -> 7 padding
+            (8, 0),  // 8 bytes -> 0 padding
+            (15, 1), // 15 bytes -> 1 padding
+            (16, 0), // 16 bytes -> 0 padding
         ];
 
         for (body_size, expected_pad) in test_cases {
@@ -419,7 +436,8 @@ mod tests {
 
             assert_eq!(
                 metadata.body_pad, expected_pad,
-                "Failed for body_size={}", body_size
+                "Failed for body_size={}",
+                body_size
             );
         }
     }
@@ -429,10 +447,10 @@ mod tests {
         let meta = vec64![0u8; 8];
 
         let test_cases = vec![
-            (1, 63),   // 1 byte -> 63 padding
-            (8, 56),   // 8 bytes -> 56 padding
-            (15, 49),  // 15 bytes -> 49 padding
-            (16, 48),  // 16 bytes -> 48 padding
+            (1, 63),  // 1 byte -> 63 padding
+            (8, 56),  // 8 bytes -> 56 padding
+            (15, 49), // 15 bytes -> 49 padding
+            (16, 48), // 16 bytes -> 48 padding
         ];
 
         for (body_size, expected_pad) in test_cases {
@@ -450,7 +468,8 @@ mod tests {
 
             assert_eq!(
                 metadata.body_pad, expected_pad,
-                "Failed for body_size={}", body_size
+                "Failed for body_size={}",
+                body_size
             );
         }
     }
@@ -474,11 +493,13 @@ mod tests {
         let (out, metadata) = IPCFrameEncoder::encode::<Vec64<u8>>(&mut 0, &frame).unwrap();
 
         // Read the metadata size field
-        let meta_size = u32::from_le_bytes([
-            out.0[4], out.0[5], out.0[6], out.0[7]
-        ]);
+        let meta_size = u32::from_le_bytes([out.0[4], out.0[5], out.0[6], out.0[7]]);
 
-        let expected_meta_pad = out.len() - metadata.body_total_len() - metadata.footer_eos_len() - metadata.magic_len - metadata.header_len;
+        let expected_meta_pad = out.len()
+            - metadata.body_total_len()
+            - metadata.footer_eos_len()
+            - metadata.magic_len
+            - metadata.header_len;
 
         // Should equal metadata + padding (not including header)
         assert_eq!(meta_size, (metadata.meta_len + metadata.meta_pad) as u32);
@@ -546,5 +567,4 @@ mod tests {
         assert_eq!(meta3.footer_len, 88);
         assert!(_out3.0.ends_with(ARROW_MAGIC_NUMBER));
     }
-
 }

@@ -1,12 +1,12 @@
+use futures_core::Stream;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use futures_core::Stream;
 
-use crate::traits::byte_stream::GenByteStream;
-use crate::traits::stream_buffer::StreamBuffer;
-use crate::traits::frame_decoder::FrameDecoder;
 use crate::enums::DecodeResult;
+use crate::traits::byte_stream::GenByteStream;
+use crate::traits::frame_decoder::FrameDecoder;
+use crate::traits::stream_buffer::StreamBuffer;
 
 /// Asynchronous streaming adapter for length-delimited or framed binary protocols (generic).
 ///

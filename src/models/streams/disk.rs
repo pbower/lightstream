@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_core::Stream;
-use minarrow::{vec64, Vec64};
+use minarrow::{Vec64, vec64};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, AsyncReadExt, BufReader};
 
@@ -63,9 +63,7 @@ impl Stream for DiskByteStream {
     /// - On I/O error: returns `Err(io::Error)`.
     type Item = Result<Vec64<u8>, io::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>)
-        -> Poll<Option<Self::Item>>
-    {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let me = self.get_mut();
 
         if me.eof {
@@ -82,16 +80,16 @@ impl Stream for DiskByteStream {
         match read {
             Ok(0) => {
                 me.eof = true;
-                Poll::Ready(None)                        // EOF
+                Poll::Ready(None) // EOF
             }
             Ok(n) => {
                 // move the filled buffer out
                 let mut out = std::mem::replace(
                     &mut me.buf,
-                    vec64![0u8; me.chunk_size]            // new staging buf
+                    vec64![0u8; me.chunk_size], // new staging buf
                 );
-                out.truncate(n);                          // keep only the bytes we read
-                Poll::Ready(Some(Ok(out)))                // hand ownership to caller
+                out.truncate(n); // keep only the bytes we read
+                Poll::Ready(Some(Ok(out))) // hand ownership to caller
             }
             Err(e) => {
                 me.eof = true;
@@ -101,13 +99,12 @@ impl Stream for DiskByteStream {
     }
 }
 
-
 // Implement AsyncRead for DiskByteStream by forwarding to BufReader<File>
 impl AsyncRead for DiskByteStream {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>
+        buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         // Safety: it is safe to get mutable access because Unpin is implemented.
         let me = self.get_mut();
@@ -168,7 +165,7 @@ mod tests {
     #[test]
     fn test_disk_bytestream_custom_chunk() {
         const FILE_SIZE: usize = 1 * 1024 * 1024; // 1 MiB
-        const CHUNK: usize = 128 * 1024;          // 128 KiB
+        const CHUNK: usize = 128 * 1024; // 128 KiB
 
         let path = create_test_file(FILE_SIZE, 0x55);
 

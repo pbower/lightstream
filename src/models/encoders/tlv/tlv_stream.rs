@@ -1,20 +1,20 @@
 use std::collections::VecDeque;
 use std::io;
-use std::task::{Context, Poll, Waker};
 use std::pin::Pin;
+use std::task::{Context, Poll, Waker};
 
-use futures_core::Stream;
 use crate::models::encoders::tlv::protocol::TLVEncoder;
 use crate::models::frames::tlv_frame::TLVFrame;
-use crate::traits::stream_buffer::StreamBuffer;
 use crate::traits::frame_encoder::FrameEncoder;
+use crate::traits::stream_buffer::StreamBuffer;
+use futures_core::Stream;
 
 /// Streaming TLV writer. Buffers encoded TLV frames and emits them as the supplied StreamBuffer.
 pub struct TLVStreamWriter<B: StreamBuffer> {
     out_frames: VecDeque<B>,
     finished: bool,
     waker: Option<Waker>,
-    global_offset: usize
+    global_offset: usize,
 }
 
 impl<B: StreamBuffer + 'static> TLVStreamWriter<B> {
@@ -24,7 +24,7 @@ impl<B: StreamBuffer + 'static> TLVStreamWriter<B> {
             out_frames: VecDeque::new(),
             finished: false,
             waker: None,
-            global_offset: 0
+            global_offset: 0,
         }
     }
 
@@ -70,10 +70,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minarrow::Vec64;
     use futures_core::Stream;
+    use minarrow::Vec64;
     use std::pin::Pin;
-    use std::task::{Context, Poll, Waker, RawWaker, RawWakerVTable};
+    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
     // Dummy waker for polling
     fn dummy_waker() -> Waker {

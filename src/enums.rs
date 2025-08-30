@@ -20,13 +20,21 @@ pub enum DecodeResult<F> {
 #[derive(Debug, Clone)]
 pub enum DecodeState<B: StreamBuffer> {
     Initial,
-    AfterMagic,                  // After reading file magic header (File only)
-    AfterContMarker,             // After reading stream continuation marker (Stream only)
+    AfterMagic,      // After reading file magic header (File only)
+    AfterContMarker, // After reading stream continuation marker (Stream only)
     ReadingContinuationSize,
-    ReadingMessageLength,        // Ready to read message length (prefix)
-    ReadingMessage { msg_len: usize },
-    ReadingBody { body_len: usize, message: B },
-    ReadingFooter { footer_len: usize, footer_offset: usize },
+    ReadingMessageLength, // Ready to read message length (prefix)
+    ReadingMessage {
+        msg_len: usize,
+    },
+    ReadingBody {
+        body_len: usize,
+        message: B,
+    },
+    ReadingFooter {
+        footer_len: usize,
+        footer_offset: usize,
+    },
     Done,
 }
 
@@ -55,24 +63,24 @@ impl BufferChunkSize {
     /// Returns the configured chunk size in bytes.
     pub fn chunk_size(self) -> usize {
         match self {
-            BufferChunkSize::FileIO => 1 * 1024 * 1024,        // 1 MiB
-            BufferChunkSize::Http => 64 * 1024,                // 64 KiB
-            BufferChunkSize::WebSocket => 32 * 1024,           // 32 KiB
-            BufferChunkSize::WebTransport => 64 * 1024,        // 64 KiB
-            BufferChunkSize::InMemory => 512 * 1024,           // 512 KiB
+            BufferChunkSize::FileIO => 1 * 1024 * 1024, // 1 MiB
+            BufferChunkSize::Http => 64 * 1024,         // 64 KiB
+            BufferChunkSize::WebSocket => 32 * 1024,    // 32 KiB
+            BufferChunkSize::WebTransport => 64 * 1024, // 64 KiB
+            BufferChunkSize::InMemory => 512 * 1024,    // 512 KiB
             BufferChunkSize::Custom(n) => n,
         }
     }
 }
 
 /// Arrow framing protocol. There are 2 - one for files,
-/// and one for unbounded streams, which each include different 
+/// and one for unbounded streams, which each include different
 /// termination markers, in line with the official *Apache Arrow*
 /// [IPC Streaming specification](https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format)
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum IPCMessageProtocol {
     Stream,
-    File
+    File,
 }
 
 /// Arrow Message Type Enum.
@@ -81,7 +89,7 @@ pub enum MessageType {
     Schema,
     RecordBatch,
     DictionaryBatch,
-    Unknown
+    Unknown,
 }
 
 /// Stream message batch states
@@ -89,7 +97,7 @@ pub enum MessageType {
 pub enum BatchState {
     NeedSchema,
     Ready,
-    Done
+    Done,
 }
 
 /// Stream writer states
@@ -97,5 +105,5 @@ pub enum BatchState {
 pub enum WriterState {
     Fresh,
     SchemaDone,
-    Closed
+    Closed,
 }

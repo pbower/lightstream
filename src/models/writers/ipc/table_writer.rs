@@ -2,17 +2,16 @@
 
 use std::io;
 
-use tokio::fs::File;
-use minarrow::{Field, Table};
-use tokio::io::AsyncWrite;
+use crate::enums::IPCMessageProtocol;
 use crate::models::sinks::table_sink::GTableSink;
 use crate::utils::extract_dictionary_values_from_col;
-use crate::{enums::IPCMessageProtocol};
 use futures_util::sink::SinkExt;
+use minarrow::{Field, Table};
+use tokio::fs::File;
+use tokio::io::AsyncWrite;
 
 use minarrow::Vec64;
 use std::pin::Pin;
-
 
 /// Main Table Writer
 ///
@@ -45,7 +44,7 @@ where
     pub fn schema(&self) -> &[Field] {
         &self.sink.schema
     }
-        
+
     /// Register a dictionary with the given id and values.
     pub fn register_dictionary(&mut self, dict_id: i64, values: Vec<String>) {
         self.sink.inner.register_dictionary(dict_id, values);
@@ -126,18 +125,24 @@ pub async fn write_table_to_file(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minarrow::{Array, ArrowType, Bitmask, Buffer, CategoricalArray, Field, FieldArray, Table, TextArray, Vec64};
+    use minarrow::{
+        Array, ArrowType, Bitmask, Buffer, CategoricalArray, Field, FieldArray, Table, TextArray,
+        Vec64,
+    };
     use std::sync::Arc;
     use tempfile::NamedTempFile;
     use tokio::fs::File;
     use tokio::io::AsyncReadExt;
 
     fn dict_strs() -> Vec<String> {
-        vec!["apple".to_string(), "banana".to_string(), "pear".to_string()]
+        vec![
+            "apple".to_string(),
+            "banana".to_string(),
+            "pear".to_string(),
+        ]
     }
 
     fn make_bitmask(valid: &[bool]) -> Bitmask {
@@ -149,7 +154,7 @@ mod tests {
         }
         Bitmask {
             bits: Buffer::from(Vec64::from_slice(&bits[..])),
-            len: valid.len()
+            len: valid.len(),
         }
     }
 
@@ -172,7 +177,9 @@ mod tests {
             cols: vec![FieldArray::new(
                 Field {
                     name: "col".to_string(),
-                    dtype: ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt32),
+                    dtype: ArrowType::Dictionary(
+                        minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt32,
+                    ),
                     nullable: true,
                     metadata: Default::default(),
                 },

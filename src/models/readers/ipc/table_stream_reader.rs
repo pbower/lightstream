@@ -1,11 +1,11 @@
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use futures_core::Stream;
-use tokio::io::{self, AsyncRead, ReadBuf};
-use minarrow::{Table, Vec64, Field};
 use crate::enums::IPCMessageProtocol;
 use crate::models::decoders::ipc::table_stream::GTableStreamDecoder;
 use crate::traits::stream_buffer::StreamBuffer;
+use futures_core::Stream;
+use minarrow::{Field, Table, Vec64};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{self, AsyncRead, ReadBuf};
 
 /// Async Arrow Table reader for standard 8-byte aligned buffers (`Vec<u8>`).
 pub type TableStreamReader<S> = GAsyncTablesReader<S, Vec<u8>>;
@@ -105,7 +105,7 @@ where
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>
+        buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         Pin::new(&mut this.streamer.inner.inner).poll_read(cx, buf)

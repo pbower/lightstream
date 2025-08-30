@@ -1,9 +1,17 @@
 #[cfg(test)]
 mod writer_integration_tests {
+    use lightstream_io::{
+        compression::Compression,
+        models::{
+            readers::parquet_reader::read_parquet_table,
+            writers::parquet_writer::{PAGE_CHUNK_SIZE, write_parquet_table},
+        },
+    };
+    use minarrow::{
+        Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, MaskedArray, NumericArray,
+        StringArray, Table, ffi::arrow_dtype::CategoricalIndexType, vec64,
+    };
     use std::io::{Cursor, Seek, SeekFrom};
-    use lightstream_io::{compression::Compression, models::{readers::parquet_reader::read_parquet_table, writers::parquet_writer::{write_parquet_table, PAGE_CHUNK_SIZE}}};
-    use minarrow::{ffi::arrow_dtype::CategoricalIndexType, vec64, Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, MaskedArray, NumericArray, StringArray, Table};
-
 
     fn roundtrip_table(table: &Table, compression: Compression) -> Table {
         let mut buf = Cursor::new(Vec::new());
@@ -17,9 +25,13 @@ mod writer_integration_tests {
     #[test]
     fn write_and_read_numeric_i32() {
         let arr = Array::from_int32(IntegerArray::from_slice(&[1i32, 2, 3, 4, 5]));
-        let table = Table::new("tbl".to_string(), Some(vec![
-            FieldArray::new(Field::new("numbers", ArrowType::Int32, false, None), arr),
-        ]));
+        let table = Table::new(
+            "tbl".to_string(),
+            Some(vec![FieldArray::new(
+                Field::new("numbers", ArrowType::Int32, false, None),
+                arr,
+            )]),
+        );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 5);
@@ -33,9 +45,13 @@ mod writer_integration_tests {
     fn write_and_read_boolean() {
         let data = [true, false, true, true, false, false, true];
         let arr = Array::from_bool(minarrow::BooleanArray::from_slice(&data));
-        let table = Table::new("tbl".to_string(), Some(vec![
-            FieldArray::new(Field::new("flags", ArrowType::Boolean, false, None), arr),
-        ]));
+        let table = Table::new(
+            "tbl".to_string(),
+            Some(vec![FieldArray::new(
+                Field::new("flags", ArrowType::Boolean, false, None),
+                arr,
+            )]),
+        );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), data.len());
@@ -48,15 +64,18 @@ mod writer_integration_tests {
             panic!("Expected BooleanArray column");
         }
     }
-    
+
     #[test]
     fn write_and_read_text() {
-        let arr = Array::from_string32(StringArray::from_slice(&["alpha", "beta", "gamma", "delta"]));
+        let arr = Array::from_string32(StringArray::from_slice(&[
+            "alpha", "beta", "gamma", "delta",
+        ]));
         let table = Table::new(
             "tbl".to_string(),
-            Some(vec![
-                FieldArray::new(Field::new("labels", ArrowType::String, false, None), arr),
-            ]),
+            Some(vec![FieldArray::new(
+                Field::new("labels", ArrowType::String, false, None),
+                arr,
+            )]),
         );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
@@ -64,7 +83,13 @@ mod writer_integration_tests {
 
         // TODO: Add QOL improvements to Minarrow
         if let Array::TextArray(a) = &col.array {
-            let actual: Vec<String> = a.clone().str32().unwrap().iter().map(|s| s.to_string()).collect();
+            let actual: Vec<String> = a
+                .clone()
+                .str32()
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let expected: Vec<String> = vec!["alpha", "beta", "gamma", "delta"]
                 .iter()
                 .map(|s| s.to_string())
@@ -74,19 +99,31 @@ mod writer_integration_tests {
             panic!("Expected TextArray column");
         }
     }
-    
+
     #[cfg(feature = "snappy")]
     #[test]
     fn write_and_read_text_snappy() {
-        let arr = Array::from_string32(StringArray::from_slice(&["alpha", "beta", "gamma", "delta"]));
-        let table = Table::new("tbl".to_string(), Some(vec![
-            FieldArray::new(Field::new("labels", ArrowType::String, false, None), arr),
+        let arr = Array::from_string32(StringArray::from_slice(&[
+            "alpha", "beta", "gamma", "delta",
         ]));
+        let table = Table::new(
+            "tbl".to_string(),
+            Some(vec![FieldArray::new(
+                Field::new("labels", ArrowType::String, false, None),
+                arr,
+            )]),
+        );
         let out = roundtrip_table(&table, Compression::Snappy);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 4);
         if let Array::TextArray(a) = &col.array {
-            let actual: Vec<String> = a.clone().to_str32().unwrap().iter().map(|s| s.to_string()).collect();
+            let actual: Vec<String> = a
+                .clone()
+                .to_str32()
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let expected: Vec<String> = vec!["alpha", "beta", "gamma", "delta"]
                 .iter()
                 .map(|s| s.to_string())
@@ -100,15 +137,27 @@ mod writer_integration_tests {
     #[cfg(feature = "zstd")]
     #[test]
     fn write_and_read_text_zstd() {
-        let arr = Array::from_string32(StringArray::from_slice(&["alpha", "beta", "gamma", "delta"]));
-        let table = Table::new("tbl".to_string(), Some(vec![
-            FieldArray::new(Field::new("labels", ArrowType::String, false, None), arr),
+        let arr = Array::from_string32(StringArray::from_slice(&[
+            "alpha", "beta", "gamma", "delta",
         ]));
+        let table = Table::new(
+            "tbl".to_string(),
+            Some(vec![FieldArray::new(
+                Field::new("labels", ArrowType::String, false, None),
+                arr,
+            )]),
+        );
         let out = roundtrip_table(&table, Compression::Snappy);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 4);
         if let Array::TextArray(a) = &col.array {
-            let actual: Vec<String> = a.clone().to_str32().unwrap().iter().map(|s| s.to_string()).collect();
+            let actual: Vec<String> = a
+                .clone()
+                .to_str32()
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let expected: Vec<String> = vec!["alpha", "beta", "gamma", "delta"]
                 .iter()
                 .map(|s| s.to_string())
@@ -118,30 +167,36 @@ mod writer_integration_tests {
             panic!("Expected TextArray column");
         }
     }
-    
+
     #[test]
     fn write_and_read_categorical32() {
-        let arr = Array::from_string32(StringArray::from_slice(&["foo", "bar", "foo", "baz", "bar", "baz"]));
+        let arr = Array::from_string32(StringArray::from_slice(&[
+            "foo", "bar", "foo", "baz", "bar", "baz",
+        ]));
         let table = Table::new(
             "tbl".to_string(),
-            Some(vec![
-                FieldArray::new(
-                    Field::new(
-                        "cat",
-                        ArrowType::Dictionary(CategoricalIndexType::UInt32),
-                        false,
-                        None,
-                    ),
-                    arr,
+            Some(vec![FieldArray::new(
+                Field::new(
+                    "cat",
+                    ArrowType::Dictionary(CategoricalIndexType::UInt32),
+                    false,
+                    None,
                 ),
-            ]),
+                arr,
+            )]),
         );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 6);
         // TODO: Add Minarrow QOL improvements
         if let Array::TextArray(a) = &col.array {
-            let actual: Vec<String> = a.clone().str32().unwrap().iter().map(|s| s.to_string()).collect();
+            let actual: Vec<String> = a
+                .clone()
+                .str32()
+                .unwrap()
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let expected: Vec<String> = vec!["foo", "bar", "foo", "baz", "bar", "baz"]
                 .iter()
                 .map(|s| s.to_string())
@@ -151,8 +206,7 @@ mod writer_integration_tests {
             panic!("Expected Categorical32 column");
         }
     }
-    
-    
+
     #[test]
     fn write_empty_table() {
         let table = Table::new("tbl".to_string(), Some(vec![]));
@@ -163,7 +217,7 @@ mod writer_integration_tests {
         assert_eq!(readback.n_rows, 0);
         assert!(readback.cols.is_empty());
     }
-    
+
     #[test]
     fn write_and_read_nullable_column() {
         let intarray = IntegerArray::new(
@@ -173,12 +227,10 @@ mod writer_integration_tests {
         let arr = Array::from_int64(intarray);
         let table = Table::new(
             "tbl".to_string(),
-            Some(vec![
-                FieldArray::new(
-                    Field::new("maybe", ArrowType::Int64, true, None),
-                    arr,
-                ),
-            ]),
+            Some(vec![FieldArray::new(
+                Field::new("maybe", ArrowType::Int64, true, None),
+                arr,
+            )]),
         );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
@@ -193,23 +245,18 @@ mod writer_integration_tests {
             panic!("Expected Int64 column");
         }
     }
-    
-    
+
     #[test]
     fn write_and_read_max_chunk_boundary() {
         let n = PAGE_CHUNK_SIZE + 17;
         let values: Vec<i32> = (0..n as i32).collect();
-        let arr = Array::from_int32(
-            IntegerArray::from_slice(&values)
-        );
+        let arr = Array::from_int32(IntegerArray::from_slice(&values));
         let table = Table::new(
             "tbl".to_string(),
-            Some(vec![
-                FieldArray::new(
-                    Field::new("seq", ArrowType::Int32, false, None),
-                    arr,
-                ),
-            ]),
+            Some(vec![FieldArray::new(
+                Field::new("seq", ArrowType::Int32, false, None),
+                arr,
+            )]),
         );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
@@ -219,5 +266,4 @@ mod writer_integration_tests {
             panic!("Expected Int32 column");
         }
     }
-    
 }

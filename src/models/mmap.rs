@@ -6,7 +6,7 @@ use std::ptr;
 #[derive(Debug)]
 pub struct MemMap<const ALIGN: usize> {
     pub ptr: *mut u8,
-    pub len: usize
+    pub len: usize,
 }
 
 // SAFETY: MemMap is safe to send between threads because the mmap is read-only
@@ -18,7 +18,10 @@ unsafe impl<const ALIGN: usize> Sync for MemMap<ALIGN> {}
 impl<const ALIGN: usize> MemMap<{ ALIGN }> {
     pub fn open(path: &str, offset: usize, len: usize) -> io::Result<Self> {
         if offset % ALIGN != 0 {
-            return Err(Error::new(ErrorKind::InvalidInput, "File offset must be 64-byte aligned"));
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "File offset must be 64-byte aligned",
+            ));
         }
         let file = File::open(path)?;
         let fd = file.as_raw_fd();
@@ -36,7 +39,7 @@ impl<const ALIGN: usize> MemMap<{ ALIGN }> {
                 libc::PROT_READ,
                 libc::MAP_PRIVATE,
                 fd,
-                map_offset as libc::off_t
+                map_offset as libc::off_t,
             )
         };
 
@@ -51,11 +54,17 @@ impl<const ALIGN: usize> MemMap<{ ALIGN }> {
             unsafe { libc::munmap(ptr, map_len) };
             return Err(Error::new(
                 ErrorKind::Other,
-                format!("MMAP region is not {ALIGN}-byte aligned (ptr = {:p})", region_ptr)
+                format!(
+                    "MMAP region is not {ALIGN}-byte aligned (ptr = {:p})",
+                    region_ptr
+                ),
             ));
         }
 
-        Ok(Self { ptr: region_ptr, len })
+        Ok(Self {
+            ptr: region_ptr,
+            len,
+        })
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -71,7 +80,7 @@ impl<const ALIGN: usize> AsRef<[u8]> for MemMap<{ ALIGN }> {
 
 impl<const ALIGN: usize> std::ops::Deref for MemMap<{ ALIGN }> {
     type Target = [u8];
-    
+
     fn deref(&self) -> &[u8] {
         self.as_slice()
     }
@@ -101,19 +110,21 @@ mod tests {
         use std::time::{SystemTime, UNIX_EPOCH};
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
         let nanos = now.as_nanos() as u64;
-        ((nanos ^ (nanos >> 32)) as u32).wrapping_mul(1664525).wrapping_add(1013904223)
+        ((nanos ^ (nanos >> 32)) as u32)
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223)
     }
-    
+
     fn create_temp_file_with_data(data: &[u8], pad: usize) -> std::path::PathBuf {
+        use std::env::temp_dir;
         use std::fs::File;
         use std::io::Write;
-        use std::env::temp_dir;
-    
+
         let mut path = temp_dir();
         path.push(format!("mmap_test_{}.bin", pseudo_rand()));
-    
+
         let mut file = File::create(&path).expect("Failed to create temp file");
-    
+
         if pad > 0 {
             let pad_bytes = vec![0u8; pad];
             file.write_all(&pad_bytes).expect("Pad write failed");
@@ -129,7 +140,8 @@ mod tests {
         let path = create_temp_file_with_data(data, 0);
 
         // offset 0, length = data.len()
-        let map = MemMap::<ALIGN>::open(path.to_str().unwrap(), 0, data.len()).expect("mmap failed");
+        let map =
+            MemMap::<ALIGN>::open(path.to_str().unwrap(), 0, data.len()).expect("mmap failed");
         assert_eq!(map.as_slice(), data);
         assert_eq!((map.as_slice().as_ptr() as usize) % ALIGN, 0);
 
@@ -145,7 +157,8 @@ mod tests {
         let offset = pad;
         assert_eq!(offset % ALIGN, 0, "Offset must be 64-aligned for test");
 
-        let map = MemMap::<ALIGN>::open(path.to_str().unwrap(), offset, data.len()).expect("mmap failed");
+        let map =
+            MemMap::<ALIGN>::open(path.to_str().unwrap(), offset, data.len()).expect("mmap failed");
         assert_eq!(map.as_slice(), data);
         assert_eq!((map.as_slice().as_ptr() as usize) % ALIGN, 0);
 

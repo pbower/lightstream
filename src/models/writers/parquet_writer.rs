@@ -6,25 +6,30 @@ use std::io::{Seek, Write};
 use minarrow::TemporalArray;
 use minarrow::{Array, NumericArray, Table, TextArray};
 
-use crate::compression::{compress, Compression};
+use crate::compression::{Compression, compress};
 use crate::error::IoError;
 #[cfg(feature = "large_string")]
 use crate::models::encoders::parquet::data::encode_large_string_plain;
 use crate::models::encoders::parquet::data::{
-    encode_bool_bitpacked, encode_float32_plain, encode_float64_plain, encode_int32_plain, encode_int64_plain, encode_string_plain, encode_uint32_as_int32_plain, encode_uint64_as_int64_plain
+    encode_bool_bitpacked, encode_float32_plain, encode_float64_plain, encode_int32_plain,
+    encode_int64_plain, encode_string_plain, encode_uint32_as_int32_plain,
+    encode_uint64_as_int64_plain,
 };
-use crate::models::types::parquet::{arrow_type_to_parquet, ParquetEncoding};
+use crate::models::encoders::parquet::metadata::{
+    ColumnChunkMeta, ColumnMetadata, DataPageHeaderV2, DictionaryPageHeader, FileMetaData,
+    PARQUET_MAGIC, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
+};
 use crate::models::types::parquet::ParquetLogicalType::{self};
-use crate::models::encoders::parquet::metadata::{ColumnChunkMeta, ColumnMetadata, DataPageHeaderV2, DictionaryPageHeader, FileMetaData, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics, PARQUET_MAGIC};
+use crate::models::types::parquet::{ParquetEncoding, arrow_type_to_parquet};
 
 // Chunk size for page splitting
 pub const PAGE_CHUNK_SIZE: usize = 32_768;
 
 /// Write the in-memory [`Table`] to `out` in *Parquet v2* format,
-/// supporting chunked/multi-page columns, per spec. 
+/// supporting chunked/multi-page columns, per spec.
 ///
 /// We have basic Parquet support at this time.
-/// 
+///
 /// **Implemented**:
 /// - Multiple data pages per column are emitted in fixed-size chunks.
 /// - Each dictionary page offset and first data page offset are stored in
@@ -33,13 +38,13 @@ pub const PAGE_CHUNK_SIZE: usize = 32_768;
 /// - All page-level statistics are computed for that page's chunk only.
 /// - `Zstd` and `Snappy` compression options
 /// `Plain` encoding for all types, and `RLE encoding` for *categorical* types.
-/// 
+///
 /// **Not Implemented**
-/// - Other parquet encodings are not. 
-/// 
-/// **One can write, and read Parquet from `Minarrow`, but reading 
-/// external files with more niche encodings may not work**. 
-/// 
+/// - Other parquet encodings are not.
+///
+/// **One can write, and read Parquet from `Minarrow`, but reading
+/// external files with more niche encodings may not work**.
+///
 /// To help with this:
 ///     - One can bridge over FFI to `arrow-rs`, `polars_arrow`, or `arrow2`,
 ///     to access the full reader/writer ecosystem.
@@ -47,7 +52,7 @@ pub const PAGE_CHUNK_SIZE: usize = 32_768;
 pub fn write_parquet_table<W: Write + Seek>(
     table: &Table,
     mut out: W,
-    compression: Compression
+    compression: Compression,
 ) -> Result<(), IoError> {
     // file-header magic
     out.write_all(PARQUET_MAGIC)?;
@@ -67,7 +72,7 @@ pub fn write_parquet_table<W: Write + Seek>(
                 type_length: None,
                 precision: None,
                 scale: None,
-                field_id: Some(i as i32)
+                field_id: Some(i as i32),
             }
         })
         .collect();
@@ -94,7 +99,7 @@ pub fn write_parquet_table<W: Write + Seek>(
                         &mut out,
                         &mut offset,
                         a.unique_values.iter().map(|s| s.as_bytes()),
-                        compression
+                        compression,
                     )?;
                 }
                 _ => {}
@@ -139,30 +144,39 @@ pub fn write_parquet_table<W: Write + Seek>(
                     NumericArray::Float64(a) => {
                         encode_float64_plain(&a.data[start..end], &mut values_raw)
                     }
-                    _ => return Err(IoError::UnsupportedType("numeric".into()))
+                    _ => return Err(IoError::UnsupportedType("numeric".into())),
                 },
                 Array::BooleanArray(a) => {
                     encode_bool_bitpacked(
                         &a.data.slice_clone(start, end - start),
-                        a.null_mask.as_ref().map(|m| m.slice_clone(start, end - start)).as_ref(),
+                        a.null_mask
+                            .as_ref()
+                            .map(|m| m.slice_clone(start, end - start))
+                            .as_ref(),
                         len,
-                        &mut values_raw
+                        &mut values_raw,
                     );
                 }
                 Array::TextArray(TextArray::String32(a)) => encode_string_plain(
                     &a.offsets[start..=end],
                     &a.data,
-                    a.null_mask.as_ref().map(|m| m.slice_clone(start, end - start)).as_ref(),
+                    a.null_mask
+                        .as_ref()
+                        .map(|m| m.slice_clone(start, end - start))
+                        .as_ref(),
                     len,
-                    &mut values_raw
+                    &mut values_raw,
                 )?,
                 #[cfg(feature = "large_string")]
                 Array::TextArray(TextArray::String64(a)) => encode_large_string_plain(
                     &a.offsets[start..=end],
                     &a.data,
-                    a.null_mask.as_ref().map(|m| m.slice_clone(start, end - start)).as_ref(),
+                    a.null_mask
+                        .as_ref()
+                        .map(|m| m.slice_clone(start, end - start))
+                        .as_ref(),
                     len,
-                    &mut values_raw
+                    &mut values_raw,
                 )?,
                 #[cfg(feature = "datetime")]
                 Array::TemporalArray(TemporalArray::Datetime32(a)) => {
@@ -187,18 +201,18 @@ pub fn write_parquet_table<W: Write + Seek>(
                         .collect::<Result<_, _>>()
                         .map_err(|_| {
                             IoError::Format(
-                                "Categorical64 dictionary > 4 294 967 295 entries".into()
+                                "Categorical64 dictionary > 4 294 967 295 entries".into(),
                             )
                         })?;
                     encode_dictionary_indices_rle(&idx, &mut values_raw)?;
                 }
-                _ => return Err(IoError::UnsupportedType(format!("array {:?}", col.array)))
+                _ => return Err(IoError::UnsupportedType(format!("array {:?}", col.array))),
             }
 
             // rep / def levels for this chunk
             let def_levels = col.array.null_mask().map_or_else(
                 || vec![true; len],
-                |mask| (start..end).map(|i| mask.get(i)).collect()
+                |mask| (start..end).map(|i| mask.get(i)).collect(),
             );
             let def_buf = encode_levels_rle(&def_levels);
             let rep_buf = encode_levels_rle(&vec![false; len]);
@@ -222,7 +236,7 @@ pub fn write_parquet_table<W: Write + Seek>(
                 null_count: Some(def_levels.iter().filter(|&&v| !v).count() as i64),
                 distinct_count: None,
                 min: None,
-                max: None
+                max: None,
             };
 
             // page header
@@ -247,8 +261,8 @@ pub fn write_parquet_table<W: Write + Seek>(
                     definition_levels_byte_length: def_buf.len() as i32,
                     repetition_levels_byte_length: rep_buf.len() as i32,
                     is_compressed: compression != Compression::None,
-                    statistics: Some(stats.clone())
-                })
+                    statistics: Some(stats.clone()),
+                }),
             }
             .write(&mut header_buf)?;
             out.write_all(&header_buf)?;
@@ -282,8 +296,8 @@ pub fn write_parquet_table<W: Write + Seek>(
                 data_page_offset: first_data,
                 dictionary_page_offset,
                 statistics: None,
-                definition_level: if col.field.nullable { 1 } else { 0 }
-            }
+                definition_level: if col.field.nullable { 1 } else { 0 },
+            },
         });
     }
 
@@ -292,7 +306,7 @@ pub fn write_parquet_table<W: Write + Seek>(
     row_groups.push(RowGroupMeta {
         columns: columns_meta,
         total_byte_size,
-        num_rows: n_rows_i64
+        num_rows: n_rows_i64,
     });
 
     let footer_start = out.stream_position()?;
@@ -302,7 +316,7 @@ pub fn write_parquet_table<W: Write + Seek>(
         num_rows: n_rows_i64,
         row_groups,
         key_value_metadata: None,
-        created_by: Some("parquet_writer-v2".into())
+        created_by: Some("parquet_writer-v2".into()),
     }
     .write(&mut out)?;
 
@@ -329,11 +343,11 @@ fn write_dictionary_page<'a, W, I>(
     out: &mut W,
     offset: &mut i64,
     values: I,
-    compression: Compression
+    compression: Compression,
 ) -> Result<(), IoError>
 where
     W: Write + Seek,
-    I: IntoIterator<Item = &'a [u8]>
+    I: IntoIterator<Item = &'a [u8]>,
 {
     // 1) Serialise dictionary entries (length‐prefixed)
     let mut raw = Vec::new();
@@ -358,9 +372,9 @@ where
         dictionary_page_header: Some(DictionaryPageHeader {
             num_values: entry_count,
             encoding: ParquetEncoding::Plain,
-            is_sorted: None
+            is_sorted: None,
         }),
-        data_page_header_v2: None
+        data_page_header_v2: None,
     }
     .write(&mut header_buf)?;
     out.write_all(&header_buf)?;
@@ -376,7 +390,10 @@ where
 /// true if the array is a (categorical) dictionary array.
 #[cfg(feature = "extended_categorical")]
 fn is_dictionary(arr: &Array) -> bool {
-    matches!(arr, Array::TextArray(TextArray::Categorical32(_) | TextArray::Categorical64(_)))
+    matches!(
+        arr,
+        Array::TextArray(TextArray::Categorical32(_) | TextArray::Categorical64(_))
+    )
 }
 
 /// true if the array is a (categorical) dictionary array.
@@ -449,15 +466,39 @@ fn logical_to_converted(log: &ParquetLogicalType) -> Option<i32> {
         ParquetLogicalType::TimeMillis => 6,
         #[cfg(feature = "datetime")]
         ParquetLogicalType::TimeMicros => 7,
-        ParquetLogicalType::IntType { bit_width: 8, is_signed: true } => 11,
-        ParquetLogicalType::IntType { bit_width: 16, is_signed: true } => 12,
-        ParquetLogicalType::IntType { bit_width: 32, is_signed: true } => 13,
-        ParquetLogicalType::IntType { bit_width: 64, is_signed: true } => 14,
-        ParquetLogicalType::IntType { bit_width: 8, is_signed: false } => 15,
-        ParquetLogicalType::IntType { bit_width: 16, is_signed: false } => 16,
-        ParquetLogicalType::IntType { bit_width: 32, is_signed: false } => 17,
-        ParquetLogicalType::IntType { bit_width: 64, is_signed: false } => 18,
-        _ => return None
+        ParquetLogicalType::IntType {
+            bit_width: 8,
+            is_signed: true,
+        } => 11,
+        ParquetLogicalType::IntType {
+            bit_width: 16,
+            is_signed: true,
+        } => 12,
+        ParquetLogicalType::IntType {
+            bit_width: 32,
+            is_signed: true,
+        } => 13,
+        ParquetLogicalType::IntType {
+            bit_width: 64,
+            is_signed: true,
+        } => 14,
+        ParquetLogicalType::IntType {
+            bit_width: 8,
+            is_signed: false,
+        } => 15,
+        ParquetLogicalType::IntType {
+            bit_width: 16,
+            is_signed: false,
+        } => 16,
+        ParquetLogicalType::IntType {
+            bit_width: 32,
+            is_signed: false,
+        } => 17,
+        ParquetLogicalType::IntType {
+            bit_width: 64,
+            is_signed: false,
+        } => 18,
+        _ => return None,
     })
 }
 
@@ -473,10 +514,7 @@ fn logical_to_converted(log: &ParquetLogicalType) -> Option<i32> {
 /// shortest-possible bit-packed runs (multiples of 8 values, zero-padded).
 ///
 /// On error (index wider than 32 bits) returns `IoError::Format`.
-pub fn encode_dictionary_indices_rle(
-    indices: &[u32],
-    out: &mut Vec<u8>
-) -> Result<(), IoError> {
+pub fn encode_dictionary_indices_rle(indices: &[u32], out: &mut Vec<u8>) -> Result<(), IoError> {
     if indices.is_empty() {
         out.push(0);
         return Ok(());
@@ -485,7 +523,9 @@ pub fn encode_dictionary_indices_rle(
     // bit-width
     let bit_width = (32 - indices.iter().max().unwrap().leading_zeros()).max(1) as u8;
     if bit_width > 32 {
-        return Err(IoError::Format("Dictionary index >32-bit not supported".into()));
+        return Err(IoError::Format(
+            "Dictionary index >32-bit not supported".into(),
+        ));
     }
     out.push(bit_width);
 
@@ -640,7 +680,7 @@ mod tests {
         assert_eq!(buf, &[0x03, 0x01]);
     }
 
-    // decoder -> encoder roundtrip for dict rle 
+    // decoder -> encoder roundtrip for dict rle
 
     fn roundtrip_dict_indices(indices: &[u32]) {
         let mut encoded = Vec::new();

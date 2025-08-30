@@ -3,14 +3,16 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use crate::arrow::message::org::apache::arrow::flatbuf as fb;
+use crate::enums::{BatchState, IPCMessageProtocol};
+use crate::models::decoders::ipc::parser::{
+    handle_dictionary_batch, handle_record_batch, handle_schema_header,
+};
+use crate::models::decoders::ipc::protocol::ArrowIPCFrameDecoder;
+use crate::models::streams::framed_byte_stream::FramedByteStream;
+use crate::traits::stream_buffer::StreamBuffer;
 use futures_core::Stream;
 use minarrow::*;
-use crate::arrow::message::org::apache::arrow::flatbuf as fb;
-use crate::models::decoders::ipc::protocol::ArrowIPCFrameDecoder;
-use crate::models::decoders::ipc::parser::{handle_dictionary_batch, handle_record_batch, handle_schema_header};
-use crate::enums::{BatchState, IPCMessageProtocol};
-use crate::traits::stream_buffer::StreamBuffer;
-use crate::models::streams::framed_byte_stream::FramedByteStream;
 
 // ------------------------- User-facing aliases ----------------------------------------//
 
@@ -68,7 +70,6 @@ where
     S: Stream<Item = Result<B, io::Error>> + Unpin + Send + Sync,
     B: StreamBuffer,
 {
-
     /// Create a new generic Arrow table stream reader over the provided stream and buffer type.
     ///
     /// Automatically handles Arrow IPC framing, schema, dictionaries, and record batch transitions.
@@ -104,7 +105,7 @@ where
     /// protocol or message order is violated.
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-    
+
         loop {
             let raw_frame = match Pin::new(&mut this.inner).poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
@@ -121,23 +122,23 @@ where
                 Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
                 Poll::Ready(Some(Ok(frame))) => frame,
             };
-    
+
             // Handle EOS (empty message) for both protocols.
             if raw_frame.message.is_empty() && raw_frame.body.is_empty() {
                 this.state = BatchState::Done;
                 return Poll::Ready(None);
             }
-    
+
             let af_msg = flatbuffers::root::<fb::Message>(&raw_frame.message.as_ref())
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    
+
             match af_msg.header_type() {
                 fb::MessageHeader::Schema if matches!(this.state, BatchState::NeedSchema) => {
                     this.fields = handle_schema_header(&af_msg)?;
                     this.state = BatchState::Ready;
                     continue;
                 }
-    
+
                 fb::MessageHeader::DictionaryBatch if matches!(this.state, BatchState::Ready) => {
                     let db = af_msg.header_as_dictionary_batch().ok_or_else(|| {
                         io::Error::new(io::ErrorKind::InvalidData, "missing DictionaryBatch header")
@@ -145,16 +146,20 @@ where
                     handle_dictionary_batch(&db, &raw_frame.body.as_ref(), &mut this.dicts)?;
                     continue;
                 }
-    
+
                 fb::MessageHeader::RecordBatch if matches!(this.state, BatchState::Ready) => {
                     let rec = af_msg.header_as_record_batch().ok_or_else(|| {
                         io::Error::new(io::ErrorKind::InvalidData, "missing RecordBatch header")
                     })?;
-                    let table =
-                        handle_record_batch(&rec, &this.fields, &this.dicts, &raw_frame.body.as_ref())?;
+                    let table = handle_record_batch(
+                        &rec,
+                        &this.fields,
+                        &this.dicts,
+                        &raw_frame.body.as_ref(),
+                    )?;
                     return Poll::Ready(Some(Ok(table)));
                 }
-    
+
                 fb::MessageHeader::NONE if this.protocol == IPCMessageProtocol::File => {
                     this.state = BatchState::Done;
                     return Poll::Ready(None);
@@ -172,5 +177,4 @@ where
             }
         }
     }
-    
 }

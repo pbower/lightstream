@@ -10,14 +10,15 @@ use crate::arrow::file::org::apache::arrow::flatbuf as fbf;
 use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::ARROW_MAGIC_NUMBER;
 use crate::models::decoders::ipc::parser::{
-    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch, handle_record_batch_shared
+    RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch,
+    handle_record_batch_shared,
 };
 
 #[derive(Debug, Clone)]
 struct IPCFileBlock {
     offset: usize,
     meta_bytes: usize,
-    body_bytes: usize
+    body_bytes: usize,
 }
 
 /// Heap‑allocated Arrow file reader (no mmap).
@@ -27,7 +28,7 @@ pub struct FileTableReader {
     schema: Vec<Arc<Field>>,
     dict_blocks: Vec<IPCFileBlock>,
     record_blocks: Vec<IPCFileBlock>,
-    dictionaries: std::collections::HashMap<i64, Vec<String>>
+    dictionaries: std::collections::HashMap<i64, Vec<String>>,
 }
 
 impl FileTableReader {
@@ -45,21 +46,37 @@ impl FileTableReader {
         // }
 
         if len < 12 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "file too small for Arrow"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file too small for Arrow",
+            ));
         }
         if &buf[..6] != ARROW_MAGIC_NUMBER {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing opening magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing opening magic",
+            ));
         }
         if &buf[len - 6..] != ARROW_MAGIC_NUMBER {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "missing closing magic"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing closing magic",
+            ));
         }
 
         let footer_len_offset = len - 6 - 4;
-        let footer_len = u32::from_le_bytes(buf[footer_len_offset..footer_len_offset + 4].try_into().unwrap()) as usize;
+        let footer_len = u32::from_le_bytes(
+            buf[footer_len_offset..footer_len_offset + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         let footer_start = footer_len_offset - footer_len;
         let footer_end = footer_start + footer_len;
         if footer_start < 8 || footer_end > len {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "footer out of bounds"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "footer out of bounds",
+            ));
         }
 
         let footer_msg: &fbf::Footer = {
@@ -84,7 +101,7 @@ impl FileTableReader {
             .map(|b| IPCFileBlock {
                 offset: b.offset() as usize,
                 meta_bytes: b.metaDataLength() as usize,
-                body_bytes: b.bodyLength() as usize
+                body_bytes: b.bodyLength() as usize,
             })
             .collect::<Vec<_>>();
 
@@ -95,7 +112,7 @@ impl FileTableReader {
             .map(|b| IPCFileBlock {
                 offset: b.offset() as usize,
                 meta_bytes: b.metaDataLength() as usize,
-                body_bytes: b.bodyLength() as usize
+                body_bytes: b.bodyLength() as usize,
             })
             .collect::<Vec<_>>();
 
@@ -106,7 +123,7 @@ impl FileTableReader {
             schema: fields,
             dict_blocks,
             record_blocks,
-            dictionaries: std::collections::HashMap::new()
+            dictionaries: std::collections::HashMap::new(),
         };
 
         rdr.load_all_dictionaries()?;
@@ -176,30 +193,44 @@ impl FileTableReader {
         })?;
         handle_record_batch_shared(
             &rec,
-            &self.schema.iter().map(|a| a.as_ref().clone()).collect::<Vec<_>>(),
+            &self
+                .schema
+                .iter()
+                .map(|a| a.as_ref().clone())
+                .collect::<Vec<_>>(),
             &self.dictionaries,
             self.data.clone(),
             body_offset,
-            body_len
+            body_len,
         )
     }
 
     fn slice_message(&self, blk: &IPCFileBlock) -> io::Result<&[u8]> {
         if blk.offset + 8 > self.data.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "block header OOB"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "block header OOB",
+            ));
         }
         let cont = u32::from_le_bytes(self.data[blk.offset..blk.offset + 4].try_into().unwrap());
         if cont != 0xFFFF_FFFF {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("bad continuation marker: {cont:#X}")
+                format!("bad continuation marker: {cont:#X}"),
             ));
         }
-        let meta_len = u32::from_le_bytes(self.data[blk.offset + 4..blk.offset + 8].try_into().unwrap()) as usize;
+        let meta_len = u32::from_le_bytes(
+            self.data[blk.offset + 4..blk.offset + 8]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         let start = blk.offset + 8;
         let end = start + meta_len;
         if end > self.data.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "msg slice OOB"));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "msg slice OOB",
+            ));
         }
         Ok(&self.data[start..end])
     }
@@ -209,7 +240,10 @@ impl FileTableReader {
 mod tests {
     use minarrow::{Array, NumericArray, TextArray};
 
-    use crate::{models::readers::ipc::file_table_reader::FileTableReader, test_helpers::{make_all_types_table, write_test_table_to_file}};
+    use crate::{
+        models::readers::ipc::file_table_reader::FileTableReader,
+        test_helpers::{make_all_types_table, write_test_table_to_file},
+    };
 
     #[tokio::test]
     async fn test_single_batch_roundtrip_heap() {
@@ -218,12 +252,12 @@ mod tests {
         let rdr = FileTableReader::open(&temp.path()).unwrap();
         assert_eq!(rdr.num_batches(), 1);
         let table2 = rdr.read_batch(0).unwrap();
-    
+
         assert_eq!(table2.n_rows, 4);
         assert_eq!(table2.cols.len(), table.cols.len());
-    
+
         println!("TABLE {:?}\n", &table2);
-    
+
         // Int32 col: sum, buffer type
         match &table2.cols[0].array {
             Array::NumericArray(NumericArray::Int32(arr)) => {
@@ -237,7 +271,7 @@ mod tests {
                     eprintln!("Int32 buffer was cloned (not 64-byte aligned in file)");
                 }
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
         // Float64 col: value and buffer type
         match &table2.cols[5].array {
@@ -252,7 +286,7 @@ mod tests {
                     eprintln!("Float64 buffer was cloned (not 64-byte aligned in file)");
                 }
             }
-            _ => panic!("wrong type")
+            _ => panic!("wrong type"),
         }
         // Check at least one string, bool, all others present
         let mut seen_string = false;
@@ -281,15 +315,17 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(seen_string && seen_bool, "String32 and Bool must be present");
+        assert!(
+            seen_string && seen_bool,
+            "String32 and Bool must be present"
+        );
         eprintln!("Any buffers shared: {}", any_shared);
         drop(rdr);
         drop(temp);
     }
-    
+
     #[tokio::test]
     async fn test_shared_buffers_with_aligned_data() {
-        
         // Arrow file structure:
         // 1. Magic "ARROW1\0\0"
         // 2. Schema message (aligned)
@@ -297,42 +333,40 @@ mod tests {
         // 4. Footer
         // 5. Footer length (4 bytes)
         // 6. Magic "ARROW1\0\0"
-        
+
         // For now, just test that our reader works with the regular file
         // and report on sharing status
         let table = make_all_types_table();
         let tables = vec![table.clone()];
         let temp = write_test_table_to_file(&tables).await;
-        
+
         let rdr = FileTableReader::open(&temp.path()).unwrap();
         assert_eq!(rdr.num_batches(), 1);
         let table2 = rdr.read_batch(0).unwrap();
-        
+
         // Count how many buffers are shared vs cloned
         let mut shared_count = 0;
         let mut cloned_count = 0;
-        
+
         for col in &table2.cols {
             match &col.array {
-                Array::NumericArray(na) => {
-                    match na {
-                        NumericArray::Int32(arr) if arr.data.is_shared() => shared_count += 1,
-                        NumericArray::Int64(arr) if arr.data.is_shared() => shared_count += 1,
-                        NumericArray::UInt32(arr) if arr.data.is_shared() => shared_count += 1,
-                        NumericArray::UInt64(arr) if arr.data.is_shared() => shared_count += 1,
-                        NumericArray::Float32(arr) if arr.data.is_shared() => shared_count += 1,
-                        NumericArray::Float64(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_numeric_types")]
-                        NumericArray::Int8(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_numeric_types")]
-                        NumericArray::Int16(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_numeric_types")]
-                        NumericArray::UInt8(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_numeric_types")]
-                        NumericArray::UInt16(arr) if arr.data.is_shared() => shared_count += 1,
-                        _ => cloned_count += 1,
-                    }
-                }
+                Array::NumericArray(na) => match na {
+                    NumericArray::Int32(arr) if arr.data.is_shared() => shared_count += 1,
+                    NumericArray::Int64(arr) if arr.data.is_shared() => shared_count += 1,
+                    NumericArray::UInt32(arr) if arr.data.is_shared() => shared_count += 1,
+                    NumericArray::UInt64(arr) if arr.data.is_shared() => shared_count += 1,
+                    NumericArray::Float32(arr) if arr.data.is_shared() => shared_count += 1,
+                    NumericArray::Float64(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::Int8(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::Int16(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::UInt8(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_numeric_types")]
+                    NumericArray::UInt16(arr) if arr.data.is_shared() => shared_count += 1,
+                    _ => cloned_count += 1,
+                },
                 Array::BooleanArray(arr) => {
                     if arr.data.bits.is_shared() {
                         shared_count += 1;
@@ -340,33 +374,33 @@ mod tests {
                         cloned_count += 1;
                     }
                 }
-                Array::TextArray(ta) => {
-                    match ta {
-                        TextArray::String32(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "large_string")]
-                        TextArray::String64(arr) if arr.data.is_shared() => shared_count += 1,
-                        TextArray::Categorical32(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_categorical")]
-                        TextArray::Categorical8(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_categorical")]
-                        TextArray::Categorical16(arr) if arr.data.is_shared() => shared_count += 1,
-                        #[cfg(feature = "extended_categorical")]
-                        TextArray::Categorical64(arr) if arr.data.is_shared() => shared_count += 1,
-                        _ => cloned_count += 1,
-                    }
-                }
+                Array::TextArray(ta) => match ta {
+                    TextArray::String32(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "large_string")]
+                    TextArray::String64(arr) if arr.data.is_shared() => shared_count += 1,
+                    TextArray::Categorical32(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_categorical")]
+                    TextArray::Categorical8(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_categorical")]
+                    TextArray::Categorical16(arr) if arr.data.is_shared() => shared_count += 1,
+                    #[cfg(feature = "extended_categorical")]
+                    TextArray::Categorical64(arr) if arr.data.is_shared() => shared_count += 1,
+                    _ => cloned_count += 1,
+                },
                 _ => {}
             }
         }
-        
-        eprintln!("Shared buffers: {}, Cloned buffers: {}", shared_count, cloned_count);
+
+        eprintln!(
+            "Shared buffers: {}, Cloned buffers: {}",
+            shared_count, cloned_count
+        );
         eprintln!("Note: Cloning is expected when file data is not 64-byte aligned.");
         eprintln!("The writer currently doesn't guarantee 64-byte alignment.");
-        
+
         // We don't assert on specific counts because alignment depends on the writer
         // Just verify the file was read correctly
         assert_eq!(table2.n_rows, 4);
         assert_eq!(table2.cols.len(), table.cols.len());
     }
-    
 }

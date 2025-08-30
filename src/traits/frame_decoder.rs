@@ -1,7 +1,7 @@
 //! Generic frame decoding infrastructure.
 //!
 //! For implementing minimally-allocating, incremental frame decoders over arbitrary byte streams.
-//! 
+//!
 //!  In this context, a frame refers to a self-contained unit of data extracted from a byte stream, where:
 //!  - The header (or prefix) specifies the size or format of the upcoming payload.
 //!  - The body (payload) contains exactly the number of bytes the header declares.
@@ -16,8 +16,8 @@
 //  - On `NeedMore`, retain all bytes in the buffer and supply more data.
 //  - On `Err`, treat as protocol violation or irrecoverable stream error.
 
-use std::io;
 use crate::enums::DecodeResult;
+use std::io;
 
 /// A trait for non-allocating, pull-based frame decoders.
 ///

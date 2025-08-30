@@ -1,7 +1,7 @@
 use lightstream_io::models::writers::ipc::table_writer::write_table_to_file;
 use minarrow::{
-    Array, ArrowType, BooleanArray, Buffer, CategoricalArray, Field, FieldArray,
-    IntegerArray, StringArray, Table, Vec64, vec64
+    Array, ArrowType, BooleanArray, Buffer, CategoricalArray, Field, FieldArray, IntegerArray,
+    StringArray, Table, Vec64, vec64,
 };
 use tokio::runtime::Runtime;
 
@@ -16,22 +16,24 @@ fn main() {
                     Field::new("id", ArrowType::Int32, true, None),
                     Array::from_int32(IntegerArray::<i32>::from_vec64(
                         vec64![1_i32, 2, 3, 4],
-                        None
-                    ))
+                        None,
+                    )),
                 ),
                 // FieldArray::new(
                 //     Field::new("value", ArrowType::Float64, false, None),
                 //     Array::from_float64(FloatArray::from_vec64(vec64![10.5, 20.0, 30.2, 40.7], None))
                 // ),
             ]
-            .into()
+            .into(),
         );
 
         write_table_to_file(
             "t1.arrow",
             &tbl1,
             tbl1.schema().iter().map(|arc| (**arc).clone()).collect(),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // let file_data = std::fs::read("t1.arrow").unwrap();
         // let _ = verify_arrow_file_blocks(&file_data).unwrap();
@@ -44,24 +46,26 @@ fn main() {
                     Field::new("name", ArrowType::String, true, None),
                     Array::from_string32(StringArray::from_vec64(
                         vec64!["alice", "bob", "cindy", "dan"],
-                        None
-                    ))
+                        None,
+                    )),
                 ),
                 FieldArray::new(
                     Field::new("active", ArrowType::Boolean, false, None),
                     Array::from_bool(BooleanArray::from_vec64(
                         vec64![true, false, true, true],
-                        None
-                    ))
+                        None,
+                    )),
                 ),
             ]
-            .into()
+            .into(),
         );
         write_table_to_file(
             "t2.arrow",
             &tbl2,
             tbl2.schema().iter().map(|arc| (**arc).clone()).collect(),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
 
         // --- Table 3 ---
         let categories = vec!["red".to_string(), "green".to_string(), "blue".to_string()];
@@ -72,23 +76,23 @@ fn main() {
         };
         let tbl3 = Table::new(
             "tbl3".to_string(),
-            vec![
-                FieldArray::new(
-                    Field::new(
-                        "category",
-                        ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt32),
-                        true,
-                        None
-                    ),
-                    Array::from_categorical32(cat_arr)
-                )
-            ]
-            .into()
+            vec![FieldArray::new(
+                Field::new(
+                    "category",
+                    ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt32),
+                    true,
+                    None,
+                ),
+                Array::from_categorical32(cat_arr),
+            )]
+            .into(),
         );
         write_table_to_file(
             "t3.arrow",
             &tbl3,
             tbl3.schema().iter().map(|arc| (**arc).clone()).collect(),
-        ).await.unwrap();
+        )
+        .await
+        .unwrap();
     });
 }

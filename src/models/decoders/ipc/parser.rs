@@ -8,16 +8,17 @@ use flatbuffers::Vector;
 use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
 use minarrow::*;
 
-use crate::arrow::message::org::apache::arrow::flatbuf::{BodyCompression, Buffer, DictionaryBatch};
-use crate::{debug_println, AFMessage, AFMessageHeader};
+use crate::arrow::message::org::apache::arrow::flatbuf as fb;
+use crate::arrow::message::org::apache::arrow::flatbuf::{
+    BodyCompression, Buffer, DictionaryBatch,
+};
+use crate::{AFMessage, AFMessageHeader, debug_println};
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use crate::arrow::message::org::apache::arrow::flatbuf as fb;
 
 pub struct RecordBatchParser;
 
 impl RecordBatchParser {
-
     /// Parses a RecordBatch into a Minarrow `Table`.
     ///
     /// `arc_opt` may supply the backing buffer; if `None` we allocate a single
@@ -37,16 +38,19 @@ impl RecordBatchParser {
         }
 
         // TODO: Compression handling
-        if let Some(BodyCompression { .. }) = message.header_as_record_batch().and_then(|rb| rb.compression()) {
+        if let Some(BodyCompression { .. }) = message
+            .header_as_record_batch()
+            .and_then(|rb| rb.compression())
+        {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "Compressed RecordBatch bodies are not yet supported",
             ));
         }
 
-        let header = message
-            .header_as_record_batch()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Missing RecordBatch payload"))?;
+        let header = message.header_as_record_batch().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "Missing RecordBatch payload")
+        })?;
 
         let n_rows = header.length() as usize;
         let nodes = header
@@ -96,103 +100,127 @@ impl RecordBatchParser {
                         arrow_buf,
                         &field.name,
                     )?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<i32>(slice, field_len, &arc_opt)
-                    };
+                    let data =
+                        unsafe { Self::buffer_from_slice::<i32>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 ArrowType::Int64 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<i64>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<i64>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 ArrowType::UInt32 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<u32>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<u32>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::UInt32(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 ArrowType::UInt64 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<u64>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<u64>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::UInt64(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 ArrowType::Float32 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<f32>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<f32>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Float32(Arc::new(FloatArray::new(
                         data, null_mask,
                     ))))
                 }
                 ArrowType::Float64 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<f64>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<f64>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray::new(
                         data, null_mask,
                     ))))
                 }
                 #[cfg(feature = "extended_numeric_types")]
                 ArrowType::Int8 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<i8>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data = unsafe { Self::buffer_from_slice::<i8>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Int8(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 #[cfg(feature = "extended_numeric_types")]
                 ArrowType::Int16 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<i16>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<i16>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::Int16(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 #[cfg(feature = "extended_numeric_types")]
                 ArrowType::UInt8 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<u8>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data = unsafe { Self::buffer_from_slice::<u8>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::UInt8(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
                 }
                 #[cfg(feature = "extended_numeric_types")]
                 ArrowType::UInt16 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe {
-                        Self::buffer_from_slice::<u16>(slice, field_len, &arc_opt)
-                    };
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<u16>(slice, field_len, &arc_opt) };
                     Array::NumericArray(NumericArray::UInt16(Arc::new(IntegerArray::new(
                         data, null_mask,
                     ))))
@@ -200,8 +228,12 @@ impl RecordBatchParser {
 
                 // ---- boolean ---------------------------------------------------------------
                 ArrowType::Boolean => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
                     let bool_data = Bitmask::from_bytes(slice, field_len);
                     let bool_array = BooleanArray {
                         data: bool_data,
@@ -225,12 +257,15 @@ impl RecordBatchParser {
                     Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
                         data,
                         null_mask.map(|mask| {
-                            assert_eq!(mask.len(), field_len, "String null_mask length must equal number of strings");
+                            assert_eq!(
+                                mask.len(),
+                                field_len,
+                                "String null_mask length must equal number of strings"
+                            );
                             mask
                         }),
                         offsets,
                     ))))
-                    
                 }
                 #[cfg(feature = "large_string")]
                 ArrowType::LargeString => {
@@ -245,7 +280,11 @@ impl RecordBatchParser {
                     Array::TextArray(TextArray::String64(Arc::new(StringArray::new(
                         data,
                         null_mask.map(|mask| {
-                            assert_eq!(mask.len(), field_len, "String null_mask length must equal number of strings");
+                            assert_eq!(
+                                mask.len(),
+                                field_len,
+                                "String null_mask length must equal number of strings"
+                            );
                             mask
                         }),
                         offsets,
@@ -253,17 +292,31 @@ impl RecordBatchParser {
                 }
                 #[cfg(feature = "datetime")]
                 ArrowType::Date32 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe { Self::buffer_from_slice::<i32>(slice, field_len, &arc_opt) };
-                    Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray::new(data, null_mask))))
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<i32>(slice, field_len, &arc_opt) };
+                    Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray::new(
+                        data, null_mask,
+                    ))))
                 }
                 #[cfg(feature = "large_string")]
                 ArrowType::Date64 => {
-                    let (slice, _) =
-                        Self::extract_buffer_slice(&fbuf_meta, &mut buffer_idx, arrow_buf, &field.name)?;
-                    let data = unsafe { Self::buffer_from_slice::<i64>(slice, field_len, &arc_opt) };
-                    Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray::new(data, null_mask))))
+                    let (slice, _) = Self::extract_buffer_slice(
+                        &fbuf_meta,
+                        &mut buffer_idx,
+                        arrow_buf,
+                        &field.name,
+                    )?;
+                    let data =
+                        unsafe { Self::buffer_from_slice::<i64>(slice, field_len, &arc_opt) };
+                    Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray::new(
+                        data, null_mask,
+                    ))))
                 }
                 // dictionary
                 ArrowType::Dictionary(idx_ty) => {
@@ -299,9 +352,8 @@ impl RecordBatchParser {
                     let off_len = off_meta.length() as usize;
                     let off_slice = &arrow_buf[off_start..off_start + off_len];
                     let num_off = off_len / std::mem::size_of::<u32>();
-                    let offsets_buf: minarrow::Buffer<u32> = unsafe {
-                        Self::buffer_from_slice::<u32>(off_slice, num_off, &arc_opt)
-                    };
+                    let offsets_buf: minarrow::Buffer<u32> =
+                        unsafe { Self::buffer_from_slice::<u32>(off_slice, num_off, &arc_opt) };
 
                     let val_start = val_meta.offset() as usize;
                     let val_len = val_meta.length() as usize;
@@ -314,63 +366,56 @@ impl RecordBatchParser {
                     let unique_n = offs.len().saturating_sub(1);
                     let mut unique_values = Vec64::<String>::with_capacity(unique_n);
                     for i in 0..unique_n {
-                        let s = std::str::from_utf8(
-                            &bytes_buf[offs[i] as usize..offs[i + 1] as usize],
-                        )
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                        let s =
+                            std::str::from_utf8(&bytes_buf[offs[i] as usize..offs[i + 1] as usize])
+                                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
                         unique_values.push(s.to_owned());
                     }
 
                     // choose variant by index type
                     match idx_ty {
-                        CategoricalIndexType::UInt32 => Array::TextArray(
-                            TextArray::Categorical32(Arc::new(CategoricalArray::<u32>::new(
-                                data_buf,
-                                unique_values,
-                                null_mask,
-                            ))),
-                        ),
+                        CategoricalIndexType::UInt32 => {
+                            Array::TextArray(TextArray::Categorical32(Arc::new(
+                                CategoricalArray::<u32>::new(data_buf, unique_values, null_mask),
+                            )))
+                        }
                         #[cfg(feature = "extended_categorical")]
                         CategoricalIndexType::UInt8 => {
-                            eprintln!("DEBUG parse_record_batch: Creating Categorical8, field_len={}, idx_slice.len()={}, unique_values.len()={}, null_mask={:?}",
-                                field_len, idx_slice.len(), unique_values.len(), null_mask.as_ref().map(|m| m.len()));
-                            let data8 = unsafe { Self::buffer_from_slice::<u8>(idx_slice, field_len, &arc_opt) };
-                            Array::TextArray(
-                                TextArray::Categorical8(Arc::new(CategoricalArray::<u8>::new(
-                                    data8,
-                                    unique_values,
-                                    null_mask,
-                                )))
-                            )
-                        },
+                            eprintln!(
+                                "DEBUG parse_record_batch: Creating Categorical8, field_len={}, idx_slice.len()={}, unique_values.len()={}, null_mask={:?}",
+                                field_len,
+                                idx_slice.len(),
+                                unique_values.len(),
+                                null_mask.as_ref().map(|m| m.len())
+                            );
+                            let data8 = unsafe {
+                                Self::buffer_from_slice::<u8>(idx_slice, field_len, &arc_opt)
+                            };
+                            Array::TextArray(TextArray::Categorical8(Arc::new(CategoricalArray::<
+                                u8,
+                            >::new(
+                                data8,
+                                unique_values,
+                                null_mask,
+                            ))))
+                        }
                         #[cfg(feature = "extended_categorical")]
                         CategoricalIndexType::UInt16 => {
-                            let data16 = unsafe { Self::buffer_from_slice::<u16>(idx_slice, field_len, &arc_opt) };
-                            Array::TextArray(
-                                TextArray::Categorical16(Arc::new(CategoricalArray::<u16>::new(
-                                    data16,
-                                    unique_values,
-                                    null_mask,
-                                )))
-                            )
-                        },
+                            let data16 = unsafe {
+                                Self::buffer_from_slice::<u16>(idx_slice, field_len, &arc_opt)
+                            };
+                            Array::TextArray(TextArray::Categorical16(Arc::new(
+                                CategoricalArray::<u16>::new(data16, unique_values, null_mask),
+                            )))
+                        }
                         #[cfg(feature = "extended_categorical")]
                         CategoricalIndexType::UInt64 => {
-                            let data64 = unsafe { Self::buffer_from_slice::<u64>(idx_slice, field_len, &arc_opt) };
-                            Array::TextArray(
-                                TextArray::Categorical64(Arc::new(CategoricalArray::<u64>::new(
-                                    data64,
-                                    unique_values,
-                                    null_mask,
-                                )))
-                            )
-                        },
-                        #[cfg(not(feature = "extended_categorical"))]
-                        _ => {
-                            return Err(io::Error::new(
-                                io::ErrorKind::InvalidData,
-                                format!("Extended categorical type {:?} requires 'extended_categorical' feature", idx_ty),
-                            ))
+                            let data64 = unsafe {
+                                Self::buffer_from_slice::<u64>(idx_slice, field_len, &arc_opt)
+                            };
+                            Array::TextArray(TextArray::Categorical64(Arc::new(
+                                CategoricalArray::<u64>::new(data64, unique_values, null_mask),
+                            )))
                         }
                     }
                 }
@@ -379,7 +424,7 @@ impl RecordBatchParser {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("Unsupported type: {:?}", other),
-                    ))
+                    ));
                 }
             };
 
@@ -416,7 +461,6 @@ impl RecordBatchParser {
         Ok((&arrow_buf[offset..offset + length], offset))
     }
 
- 
     /// Turn a raw byte‑slice into a `Buffer<T>`.
     ///
     /// * If the bytes are properly aligned **and** we have an `Arc`,
@@ -425,7 +469,7 @@ impl RecordBatchParser {
     ///   owned `Vec64<T>`.
     ///   in which case `decode_fixed_width_batch` supplies the `Arc`.
     /// * If unaligned we always copy.
-    /// 
+    ///
     #[inline]
     pub unsafe fn buffer_from_slice<T: Copy>(
         slice: &[u8],
@@ -438,16 +482,20 @@ impl RecordBatchParser {
         let aligned_8 = (ptr as usize) % 8 == 0;
         let aligned_64 = (ptr as usize) % 64 == 0;
 
-        debug_println!("Creating buffer with:\nAligned 8: {:?}\nAligned 64: {:?}\narc_bytes is some: {:?}\n", aligned_8, aligned_64, arc_bytes.is_some());
+        debug_println!(
+            "Creating buffer with:\nAligned 8: {:?}\nAligned 64: {:?}\narc_bytes is some: {:?}\n",
+            aligned_8,
+            aligned_64,
+            arc_bytes.is_some()
+        );
 
-        println!("Off: {}", ptr as usize & 63 );
+        println!("Off: {}", ptr as usize & 63);
         if ptr as usize & 63 == 0 {
             if let Some(arc) = arc_bytes {
                 debug_println!("Aligned: Creating buffer with arc_bytes");
                 // SAFETY: ptr must be within arc's allocation, correctly aligned and cover [ptr, ptr+len*T].
-                // if it is not 64-byte aligned, the function will copy data to an owned buffer and flag it. 
+                // if it is not 64-byte aligned, the function will copy data to an owned buffer and flag it.
                 unsafe { minarrow::Buffer::from_shared_raw(arc.clone(), ptr, len) }
-
             } else {
                 debug_println!("Aligned: Allocating new buffer from slice");
                 // No reusable Arc -> copy.
@@ -461,14 +509,20 @@ impl RecordBatchParser {
             debug_println!("Not aligned: Copying");
             let elem_size = std::mem::size_of::<T>();
             let mut v = Vec64::with_capacity(len);
-            unsafe { std::ptr::copy_nonoverlapping(slice.as_ptr(), v.as_mut_ptr() as *mut u8, len * elem_size) };
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    slice.as_ptr(),
+                    v.as_mut_ptr() as *mut u8,
+                    len * elem_size,
+                )
+            };
             unsafe { v.set_len(len) };
             minarrow::Buffer::from(v)
         }
     }
 
-    // TODO: Dictionary delta support 
-    
+    // TODO: Dictionary delta support
+
     /// Checks for the unsupported dictionary delta case.
     ///
     /// * If `isDelta == true` → returns an **Unsupported** error.
@@ -580,9 +634,7 @@ impl RecordBatchParser {
         *buffer_idx += 2;
         Ok((data, offsets))
     }
-
 }
-
 
 // ------------------------- Format Handlers ------------------------------------------------//
 
@@ -597,15 +649,23 @@ pub(crate) fn handle_dictionary_batch(
     dicts: &mut HashMap<i64, Vec<String>>,
 ) -> io::Result<()> {
     if db.isDelta() {
-        return Err(io::Error::new(io::ErrorKind::Unsupported, "delta dictionaries not supported"));
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "delta dictionaries not supported",
+        ));
     }
     let dict_id = db.id();
-    let rec =
-        db.data().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad dict batch"))?;
-    let buffers =
-        rec.buffers().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
+    let rec = db
+        .data()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "bad dict batch"))?;
+    let buffers = rec
+        .buffers()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
     if buffers.len() < 3 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "dictionary batch buffers < 3"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "dictionary batch buffers < 3",
+        ));
     }
     let off_meta = buffers.get(1);
     let data_meta = buffers.get(2);
@@ -619,8 +679,12 @@ pub(crate) fn handle_dictionary_batch(
             io::ErrorKind::UnexpectedEof,
             format!(
                 "dictionary batch buffer out of bounds: off_off+off_len={}+{} or data_off+data_len={}+{} > body.len()={}",
-                off_off, off_len, data_off, data_len, body.len()
-            )
+                off_off,
+                off_len,
+                data_off,
+                data_len,
+                body.len()
+            ),
         ));
     }
 
@@ -629,7 +693,7 @@ pub(crate) fn handle_dictionary_batch(
     if count < 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "dictionary batch offset count < 2"
+            "dictionary batch offset count < 2",
         ));
     }
     let mut uniques = Vec::with_capacity(count - 1);
@@ -640,7 +704,7 @@ pub(crate) fn handle_dictionary_batch(
         if data_off + end > body.len() || data_off + start > body.len() || start > end {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "dictionary batch string slice out of bounds"
+                "dictionary batch string slice out of bounds",
             ));
         }
         let s = std::str::from_utf8(&body[data_off + start..data_off + end])
@@ -662,16 +726,21 @@ pub(crate) fn handle_record_batch(
     dicts: &HashMap<i64, Vec<String>>,
     body: &[u8],
 ) -> io::Result<Table> {
-    let nodes =
-        rec.nodes().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no nodes"))?;
-    let buffers =
-        rec.buffers().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
+    let nodes = rec
+        .nodes()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no nodes"))?;
+    let buffers = rec
+        .buffers()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
     let mut buffer_idx = 0;
     let mut cols = Vec::with_capacity(fields.len());
     let n_rows = nodes.get(0).length() as usize;
 
     for (col_idx, field) in fields.iter().enumerate() {
-        eprintln!("DEBUG handle_record_batch: Processing field {} ({}), type {:?}", col_idx, field.name, field.dtype);
+        eprintln!(
+            "DEBUG handle_record_batch: Processing field {} ({}), type {:?}",
+            col_idx, field.name, field.dtype
+        );
         let node = nodes.get(col_idx);
         let row_count = node.length() as usize;
 
@@ -688,103 +757,180 @@ pub(crate) fn handle_record_batch(
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int8 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i8>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int8,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int8,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt8 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u8>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt8,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::UInt8,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int16 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i16>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int16,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int16,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt16 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u16>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt16,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::UInt16,
                 );
             }
             ArrowType::Int32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i32>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int32,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int32,
                 );
             }
             ArrowType::UInt32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u32>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt32,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::UInt32,
                 );
             }
             ArrowType::Int64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i64>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int64,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int64,
                 );
             }
             ArrowType::UInt64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u64>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::UInt64,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::UInt64,
                 );
             }
             ArrowType::Float32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col::<f32>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Float32,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Float32,
                 );
             }
             ArrowType::Float64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col::<f64>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Float64,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Float64,
                 );
             }
             ArrowType::Boolean => {
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(
-                    &field.name, col_idx, data_offset, data_slice.len(), body.len(),
+                    &field.name,
+                    col_idx,
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
                 )?;
                 let arr = BooleanArray {
                     data: Bitmask {
@@ -795,18 +941,32 @@ pub(crate) fn handle_record_batch(
                     null_mask,
                     _phantom: PhantomData,
                 };
-                cols.push(FieldArray::new(field.clone(), Array::BooleanArray(arr.into())));
+                cols.push(FieldArray::new(
+                    field.clone(),
+                    Array::BooleanArray(arr.into()),
+                ));
             }
             ArrowType::String => {
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_two_buffer_bounds(
-                    &field.name, col_idx,
-                    offs_offset, offs_slice.len(), data_offset, data_slice.len(), body.len(),
+                    &field.name,
+                    col_idx,
+                    offs_offset,
+                    offs_slice.len(),
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
                 )?;
                 #[cfg(not(feature = "large_string"))]
                 let offs = cast_slice::<u32>(offs_slice);
@@ -819,7 +979,7 @@ pub(crate) fn handle_record_batch(
                     )
                     .into(),
                 );
-                #[cfg(feature = "large_string")] // TODO: Add full support
+                #[cfg(feature = "large_string")]
                 let offs = cast_slice::<u64>(offs_slice);
                 #[cfg(feature = "large_string")]
                 let arr = TextArray::String64(
@@ -835,14 +995,25 @@ pub(crate) fn handle_record_batch(
             #[cfg(feature = "large_string")]
             ArrowType::LargeString => {
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_two_buffer_bounds(
-                    &field.name, col_idx,
-                    offs_offset, offs_slice.len(), data_offset, data_slice.len(), body.len(),
+                    &field.name,
+                    col_idx,
+                    offs_offset,
+                    offs_slice.len(),
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
                 )?;
                 // Check if this is actually u32 offset data misidentified as LargeString
                 if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
@@ -871,22 +1042,38 @@ pub(crate) fn handle_record_batch(
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 }
             }
+            #[cfg(feature = "datetime")]
             ArrowType::Date32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i32>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int32,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int32,
                 );
             }
+            #[cfg(feature = "datetime")]
             ArrowType::Date64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i64>(
-                    &mut cols, field, data_slice, null_mask.clone(), NumericArray::Int64,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    null_mask.clone(),
+                    NumericArray::Int64,
                 );
             }
             ArrowType::Dictionary(idx_ty) => {
@@ -904,39 +1091,88 @@ pub(crate) fn handle_record_batch(
                     }
                 };
                 let (idx_slice, idx_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
-                check_buffer_bounds(&field.name, col_idx, idx_offset, idx_slice.len(), body.len())?;
+                check_buffer_bounds(
+                    &field.name,
+                    col_idx,
+                    idx_offset,
+                    idx_slice.len(),
+                    body.len(),
+                )?;
                 match idx_ty {
                     CategoricalIndexType::UInt32 => {
-                        eprintln!("DEBUG: Creating Categorical32 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical32 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u32>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(), TextArray::Categorical32,
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
+                            TextArray::Categorical32,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt8 => {
-                        eprintln!("DEBUG: Creating Categorical8 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical8 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u8>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(), TextArray::Categorical8,
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
+                            TextArray::Categorical8,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt16 => {
-                        eprintln!("DEBUG: Creating Categorical16 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical16 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u16>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(), TextArray::Categorical16,
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
+                            TextArray::Categorical16,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt64 => {
-                        eprintln!("DEBUG: Creating Categorical64 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical64 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u64>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(), TextArray::Categorical64,
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
+                            TextArray::Categorical64,
                         );
                     }
                 }
@@ -944,7 +1180,7 @@ pub(crate) fn handle_record_batch(
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Unsupported field type {}", field.name)
+                    format!("Unsupported field type {}", field.name),
                 ));
             }
         }
@@ -966,14 +1202,16 @@ pub(crate) fn handle_record_batch_shared<M: ?Sized>(
     arc_data: Arc<M>,
     body_offset: usize,
     body_len: usize,
-) -> io::Result<Table> 
+) -> io::Result<Table>
 where
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
-    let nodes =
-        rec.nodes().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no nodes"))?;
-    let buffers =
-        rec.buffers().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
+    let nodes = rec
+        .nodes()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no nodes"))?;
+    let buffers = rec
+        .buffers()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
     let mut buffer_idx = 0;
     let mut cols = Vec::with_capacity(fields.len());
     let n_rows = nodes.get(0).length() as usize;
@@ -981,7 +1219,10 @@ where
     let body = &full_data[body_offset..body_offset + body_len];
 
     for (col_idx, field) in fields.iter().enumerate() {
-        eprintln!("DEBUG handle_record_batch_shared: Processing field {} ({}), type {:?}", col_idx, field.name, field.dtype);
+        eprintln!(
+            "DEBUG handle_record_batch_shared: Processing field {} ({}), type {:?}",
+            col_idx, field.name, field.dtype
+        );
         let node = nodes.get(col_idx);
         let row_count = node.length() as usize;
 
@@ -998,135 +1239,252 @@ where
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int8 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i8, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int8, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int8,
+                    &arc_data,
+                    body_offset,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt8 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u8, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::UInt8, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::UInt8,
+                    &arc_data,
+                    body_offset,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int16 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i16, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int16, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int16,
+                    &arc_data,
+                    body_offset,
                 );
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt16 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u16, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::UInt16, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::UInt16,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::Int32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i32, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int32, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int32,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::UInt32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u32, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::UInt32, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::UInt32,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::Int64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i64, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int64, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int64,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::UInt64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u64, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::UInt64, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::UInt64,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::Float32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col_shared::<f32, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Float32, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Float32,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::Float64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col_shared::<f64, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Float64, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Float64,
+                    &arc_data,
+                    body_offset,
                 );
             }
+            #[cfg(feature = "datetime")]
             ArrowType::Date32 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i32, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int32, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int32,
+                    &arc_data,
+                    body_offset,
                 );
             }
+            #[cfg(feature = "datetime")]
             ArrowType::Date64 => {
                 let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i64, M>(
-                    &mut cols, field, data_slice, data_off, null_mask.clone(), 
-                    NumericArray::Int64, &arc_data, body_offset,
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_off,
+                    null_mask.clone(),
+                    NumericArray::Int64,
+                    &arc_data,
+                    body_offset,
                 );
             }
             ArrowType::Boolean => {
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_buffer_bounds(
-                    &field.name, col_idx, data_offset, data_slice.len(), body.len(),
+                    &field.name,
+                    col_idx,
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
                 )?;
-                
+
                 // For boolean, we still need to copy as it's bit-packed
                 let arr = BooleanArray {
                     data: Bitmask {
@@ -1137,29 +1495,43 @@ where
                     null_mask,
                     _phantom: PhantomData,
                 };
-                cols.push(FieldArray::new(field.clone(), Array::BooleanArray(arr.into())));
+                cols.push(FieldArray::new(
+                    field.clone(),
+                    Array::BooleanArray(arr.into()),
+                ));
             }
-            ArrowType::String | ArrowType::LargeString => {
+            ArrowType::String => {
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
                 check_two_buffer_bounds(
-                    &field.name, col_idx,
-                    offs_offset, offs_slice.len(), data_offset, data_slice.len(), body.len(),
+                    &field.name,
+                    col_idx,
+                    offs_offset,
+                    offs_slice.len(),
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
                 )?;
-                
+
                 // Create shared buffers for string data using SharedBuffer
                 use minarrow::structs::shared_buffer::SharedBuffer;
-                
+
                 struct SliceWrapper<M: ?Sized> {
                     _owner: Arc<M>,
                     offset: usize,
                     len: usize,
                 }
-                
+
                 impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
                     fn as_ref(&self) -> &[u8] {
                         let full = self._owner.as_ref();
@@ -1167,10 +1539,10 @@ where
                         &slice[self.offset..self.offset + self.len]
                     }
                 }
-                
+
                 unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
                 unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
-                
+
                 let data_wrapper = SliceWrapper {
                     _owner: arc_data.clone(),
                     offset: body_offset + data_offset,
@@ -1178,53 +1550,99 @@ where
                 };
                 let data_shared = SharedBuffer::from_owner(data_wrapper);
                 let data_buf = minarrow::Buffer::from_shared(data_shared);
-                
-                #[cfg(feature = "large_string")]
-                {
-                    // Check if this is actually u32 offset data misidentified as LargeString
-                    if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
-                        // Likely u32 offsets, parse as String32 instead
-                        let offs_wrapper = SliceWrapper {
-                            _owner: arc_data.clone(),
-                            offset: body_offset + offs_offset,
-                            len: offs_slice.len(),
-                        };
-                        let offs_shared = SharedBuffer::from_owner(offs_wrapper);
-                        let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
-                        
-                        let arr = TextArray::String32(
-                            StringArray::new(data_buf, null_mask, offs_buf).into()
-                        );
-                        cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
-                    } else {
-                        // Actual u64 offsets
-                        let offs_wrapper = SliceWrapper {
-                            _owner: arc_data.clone(),
-                            offset: body_offset + offs_offset,
-                            len: offs_slice.len(),
-                        };
-                        let offs_shared = SharedBuffer::from_owner(offs_wrapper);
-                        let offs_buf: minarrow::Buffer<u64> = minarrow::Buffer::from_shared(offs_shared);
-                        
-                        let arr = TextArray::String64(
-                            StringArray::new(data_buf, null_mask, offs_buf).into()
-                        );
-                        cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+
+                let offs_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + offs_offset,
+                    len: offs_slice.len(),
+                };
+                let offs_shared = SharedBuffer::from_owner(offs_wrapper);
+                let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
+
+                let arr =
+                    TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
+                cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+            }
+            #[cfg(feature = "large_string")]
+            ArrowType::LargeString => {
+                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
+                )?;
+                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
+                )?;
+                check_two_buffer_bounds(
+                    &field.name,
+                    col_idx,
+                    offs_offset,
+                    offs_slice.len(),
+                    data_offset,
+                    data_slice.len(),
+                    body.len(),
+                )?;
+
+                // Create shared buffers for string data using SharedBuffer
+                use minarrow::structs::shared_buffer::SharedBuffer;
+
+                struct SliceWrapper<M: ?Sized> {
+                    _owner: Arc<M>,
+                    offset: usize,
+                    len: usize,
+                }
+
+                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+                    fn as_ref(&self) -> &[u8] {
+                        let full = self._owner.as_ref();
+                        let slice = full.as_ref();
+                        &slice[self.offset..self.offset + self.len]
                     }
                 }
-                #[cfg(not(feature = "large_string"))]
-                {
+
+                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+
+                let data_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + data_offset,
+                    len: data_slice.len(),
+                };
+                let data_shared = SharedBuffer::from_owner(data_wrapper);
+                let data_buf = minarrow::Buffer::from_shared(data_shared);
+
+                // Check if this is actually u32 offset data misidentified as LargeString
+                if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
+                    // Likely u32 offsets, parse as String32 instead
                     let offs_wrapper = SliceWrapper {
                         _owner: arc_data.clone(),
                         offset: body_offset + offs_offset,
                         len: offs_slice.len(),
                     };
                     let offs_shared = SharedBuffer::from_owner(offs_wrapper);
-                    let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
-                    
-                    let arr = TextArray::String32(
-                        StringArray::new(data_buf, null_mask, offs_buf).into()
-                    );
+                    let offs_buf: minarrow::Buffer<u32> =
+                        minarrow::Buffer::from_shared(offs_shared);
+
+                    let arr =
+                        TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
+                    cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                } else {
+                    // Actual u64 offsets
+                    let offs_wrapper = SliceWrapper {
+                        _owner: arc_data.clone(),
+                        offset: body_offset + offs_offset,
+                        len: offs_slice.len(),
+                    };
+                    let offs_shared = SharedBuffer::from_owner(offs_wrapper);
+                    let offs_buf: minarrow::Buffer<u64> =
+                        minarrow::Buffer::from_shared(offs_shared);
+
+                    let arr =
+                        TextArray::String64(StringArray::new(data_buf, null_mask, offs_buf).into());
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 }
             }
@@ -1243,43 +1661,88 @@ where
                     }
                 };
                 let (idx_slice, idx_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers, &mut buffer_idx, body, &field.name,
+                    &buffers,
+                    &mut buffer_idx,
+                    body,
+                    &field.name,
                 )?;
-                check_buffer_bounds(&field.name, col_idx, idx_offset, idx_slice.len(), body.len())?;
-                
+                check_buffer_bounds(
+                    &field.name,
+                    col_idx,
+                    idx_offset,
+                    idx_slice.len(),
+                    body.len(),
+                )?;
+
                 match idx_ty {
                     CategoricalIndexType::UInt32 => {
-                        eprintln!("DEBUG: Creating Categorical32 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical32 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u32>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(),
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
                             TextArray::Categorical32,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt8 => {
-                        eprintln!("DEBUG: Creating Categorical8 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical8 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u8>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(),
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
                             TextArray::Categorical8,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt16 => {
-                        eprintln!("DEBUG: Creating Categorical16 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical16 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u16>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(),
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
                             TextArray::Categorical16,
                         );
                     }
                     #[cfg(feature = "extended_categorical")]
                     CategoricalIndexType::UInt64 => {
-                        eprintln!("DEBUG: Creating Categorical64 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}", 
-                            field.name, idx_slice.len(), dict_values.len(), null_mask.as_ref().map(|m| m.len()));
+                        eprintln!(
+                            "DEBUG: Creating Categorical64 for field {}, idx_slice.len()={}, dict_values.len()={}, null_mask={:?}",
+                            field.name,
+                            idx_slice.len(),
+                            dict_values.len(),
+                            null_mask.as_ref().map(|m| m.len())
+                        );
                         push_categorical_col::<u64>(
-                            &mut cols, field, idx_slice, dict_values, null_mask.clone(),
+                            &mut cols,
+                            field,
+                            idx_slice,
+                            dict_values,
+                            null_mask.clone(),
                             TextArray::Categorical64,
                         );
                     }
@@ -1317,7 +1780,10 @@ pub(crate) fn handle_schema_header(af_msg: &fb::Message) -> io::Result<Vec<Field
         _ => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Arrow IPC: unsupported Flatbuffer metadata version {:?}", version)
+                format!(
+                    "Arrow IPC: unsupported Flatbuffer metadata version {:?}",
+                    version
+                ),
             ));
         }
     }
@@ -1340,8 +1806,9 @@ pub(crate) fn handle_schema_header(af_msg: &fb::Message) -> io::Result<Vec<Field
     }
 
     // 4. Extract fields
-    let fb_fields =
-        schema.fields().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no fields"))?;
+    let fb_fields = schema
+        .fields()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no fields"))?;
     let mut fields = Vec::with_capacity(fb_fields.len());
     for i in 0..fb_fields.len() {
         fields.push(convert_flatbuffers_to_arrow_field(&fb_fields.get(i))?);
@@ -1364,14 +1831,19 @@ pub fn convert_flatbuffers_to_arrow_field(fb_field: &fb::Field) -> io::Result<Fi
     let base_type = extract_base_type(fb_field)?;
     let dtype = extract_dtype(fb_field, base_type)?;
 
-    Ok(Field { name, dtype, nullable, metadata })
+    Ok(Field {
+        name,
+        dtype,
+        nullable,
+        metadata,
+    })
 }
 
 /// Extracts user-defined key-value metadata from a FlatBuffers Arrow Field.
 ///
 /// Converts FlatBuffers custom metadata into a key-value [`BTreeMap`].
 fn extract_metadata<'a>(
-    meta_vec: Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<fb::KeyValue<'a>>>>
+    meta_vec: Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<fb::KeyValue<'a>>>>,
 ) -> std::collections::BTreeMap<String, String> {
     let mut map = std::collections::BTreeMap::new();
     if let Some(vec) = meta_vec {
@@ -1388,7 +1860,7 @@ fn extract_metadata<'a>(
 ///
 /// Supports UInt32 by default, additional types under `extended_categorical`.
 fn extract_categorical_index_type(
-    index_type: Option<&fb::Int>
+    index_type: Option<&fb::Int>,
 ) -> io::Result<CategoricalIndexType> {
     let idx_type = index_type.ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidData, "missing dictionary index type")
@@ -1403,8 +1875,8 @@ fn extract_categorical_index_type(
         8 => Ok(CategoricalIndexType::UInt8),
         w => Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("unsupported dict index width {w}")
-        ))
+            format!("unsupported dict index width {w}"),
+        )),
     }
 }
 
@@ -1419,18 +1891,21 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing Int type"))?;
             match (i.bitWidth(), i.is_signed()) {
                 #[cfg(feature = "extended_numeric_types")]
-                (8,  true)  => Ok(ArrowType::Int8),
+                (8, true) => Ok(ArrowType::Int8),
                 #[cfg(feature = "extended_numeric_types")]
-                (8,  false) => Ok(ArrowType::UInt8),
+                (8, false) => Ok(ArrowType::UInt8),
                 #[cfg(feature = "extended_numeric_types")]
-                (16, true)  => Ok(ArrowType::Int16),
+                (16, true) => Ok(ArrowType::Int16),
                 #[cfg(feature = "extended_numeric_types")]
                 (16, false) => Ok(ArrowType::UInt16),
                 (32, true) => Ok(ArrowType::Int32),
                 (64, true) => Ok(ArrowType::Int64),
                 (32, false) => Ok(ArrowType::UInt32),
                 (64, false) => Ok(ArrowType::UInt64),
-                _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported int width"))
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unsupported int width",
+                )),
             }
         }
         #[cfg(not(feature = "large_string"))]
@@ -1442,7 +1917,10 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
             match f.precision() {
                 fb::Precision::SINGLE => Ok(ArrowType::Float32),
                 fb::Precision::DOUBLE => Ok(ArrowType::Float64),
-                _ => Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported float precision"))
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "unsupported float precision",
+                )),
             }
         }
         #[cfg(feature = "datetime")]
@@ -1462,7 +1940,7 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
             } else {
                 Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("unsupported fb type {other:?}")
+                    format!("unsupported fb type {other:?}"),
                 ))
             }
         }
@@ -1488,7 +1966,10 @@ fn extract_dtype(fb_field: &fb::Field, base_type: ArrowType) -> io::Result<Arrow
 #[inline(always)]
 fn cast_slice<T: Copy>(data: &[u8]) -> &[T] {
     unsafe {
-        std::slice::from_raw_parts(data.as_ptr() as *const T, data.len() / std::mem::size_of::<T>())
+        std::slice::from_raw_parts(
+            data.as_ptr() as *const T,
+            data.len() / std::mem::size_of::<T>(),
+        )
     }
 }
 
@@ -1504,23 +1985,27 @@ fn convert_date_unit_fb(unit: fb::DateUnit) -> io::Result<ArrowType> {
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("unsupported Date unit {:?}", unit),
-        ))
+        )),
     }
 }
 
 /// Convert FlatBuffer DateUnit to ArrowType for file format (fbf namespace)
 #[cfg(feature = "datetime")]
 #[inline(always)]
-fn convert_date_unit_fbf(unit: crate::arrow::file::org::apache::arrow::flatbuf::DateUnit) -> io::Result<ArrowType> {
+fn convert_date_unit_fbf(
+    unit: crate::arrow::file::org::apache::arrow::flatbuf::DateUnit,
+) -> io::Result<ArrowType> {
     match unit {
         crate::arrow::file::org::apache::arrow::flatbuf::DateUnit::DAY => Ok(ArrowType::Date32),
-        crate::arrow::file::org::apache::arrow::flatbuf::DateUnit::MILLISECOND => Ok(ArrowType::Date64),
+        crate::arrow::file::org::apache::arrow::flatbuf::DateUnit::MILLISECOND => {
+            Ok(ArrowType::Date64)
+        }
         // Note: DateUnit only has DAY and MILLISECOND variants in the Arrow spec
         // This _ pattern handles potential future additions or invalid values
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("unsupported Date unit {:?}", unit),
-        ))
+        )),
     }
 }
 
@@ -1533,7 +2018,7 @@ fn push_numeric_col<T>(
     field: &Field,
     data_slice: &[u8],
     null_mask: Option<Bitmask>,
-    make_array: fn(Arc<IntegerArray<T>>) -> NumericArray
+    make_array: fn(Arc<IntegerArray<T>>) -> NumericArray,
 ) where
     T: Copy,
 {
@@ -1542,7 +2027,10 @@ fn push_numeric_col<T>(
         data: minarrow::Buffer::from(Vec64::from_slice(values)),
         null_mask,
     });
-    cols.push(FieldArray::new(field.clone(), Array::NumericArray(make_array(arr))));
+    cols.push(FieldArray::new(
+        field.clone(),
+        Array::NumericArray(make_array(arr)),
+    ));
 }
 
 /// Shared buffer version of push_numeric_col for zero-copy from Arc<M>
@@ -1562,14 +2050,14 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
-    
+
     // Create a wrapper that references the slice we need
     struct SliceWrapper<M: ?Sized> {
         _owner: Arc<M>,
         offset: usize,
         len: usize,
     }
-    
+
     impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
         fn as_ref(&self) -> &[u8] {
             let full = self._owner.as_ref();
@@ -1577,27 +2065,27 @@ fn push_numeric_col_shared<T, M: ?Sized>(
             &slice[self.offset..self.offset + self.len]
         }
     }
-    
+
     unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
     unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
-    
+
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
-    
+
     let wrapper = SliceWrapper {
         _owner: arc_data.clone(),
         offset: absolute_offset,
         len: byte_len,
     };
-    
+
     let shared = SharedBuffer::from_owner(wrapper);
     let data = minarrow::Buffer::from_shared(shared);
-    
-    let arr = Arc::new(IntegerArray {
-        data,
-        null_mask,
-    });
-    cols.push(FieldArray::new(field.clone(), Array::NumericArray(make_array(arr))));
+
+    let arr = Arc::new(IntegerArray { data, null_mask });
+    cols.push(FieldArray::new(
+        field.clone(),
+        Array::NumericArray(make_array(arr)),
+    ));
 }
 
 /// Appends a floating-point column to the columns vector, constructing from raw bytes and optional null mask.
@@ -1609,7 +2097,7 @@ fn push_float_col<T>(
     field: &Field,
     data_slice: &[u8],
     null_mask: Option<Bitmask>,
-    make_array: fn(Arc<FloatArray<T>>) -> NumericArray
+    make_array: fn(Arc<FloatArray<T>>) -> NumericArray,
 ) where
     T: Copy,
 {
@@ -1618,7 +2106,10 @@ fn push_float_col<T>(
         data: minarrow::Buffer::from(Vec64::from_slice(values)),
         null_mask,
     });
-    cols.push(FieldArray::new(field.clone(), Array::NumericArray(make_array(arr))));
+    cols.push(FieldArray::new(
+        field.clone(),
+        Array::NumericArray(make_array(arr)),
+    ));
 }
 
 /// Shared buffer version of push_float_col for zero-copy from Arc<[u8]>
@@ -1638,13 +2129,13 @@ fn push_float_col_shared<T, M: ?Sized>(
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
-    
+
     struct SliceWrapper<M: ?Sized> {
         _owner: Arc<M>,
         offset: usize,
         len: usize,
     }
-    
+
     impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
         fn as_ref(&self) -> &[u8] {
             let full = self._owner.as_ref();
@@ -1652,27 +2143,27 @@ fn push_float_col_shared<T, M: ?Sized>(
             &slice[self.offset..self.offset + self.len]
         }
     }
-    
+
     unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
     unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
-    
+
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
-    
+
     let wrapper = SliceWrapper {
         _owner: arc_data.clone(),
         offset: absolute_offset,
         len: byte_len,
     };
-    
+
     let shared = SharedBuffer::from_owner(wrapper);
     let data = minarrow::Buffer::from_shared(shared);
-    
-    let arr = Arc::new(FloatArray {
-        data,
-        null_mask,
-    });
-    cols.push(FieldArray::new(field.clone(), Array::NumericArray(make_array(arr))));
+
+    let arr = Arc::new(FloatArray { data, null_mask });
+    cols.push(FieldArray::new(
+        field.clone(),
+        Array::NumericArray(make_array(arr)),
+    ));
 }
 
 /// Appends a categorical (dictionary) column to the columns vector, constructing from indices and dictionary values.
@@ -1708,7 +2199,7 @@ fn check_buffer_bounds(
     if off + len > body_len {
         Err(io::Error::new(
             io::ErrorKind::UnexpectedEof,
-            format!("buffer out of bounds for {}/{}", field_name, col_idx)
+            format!("buffer out of bounds for {}/{}", field_name, col_idx),
         ))
     } else {
         Ok(())
@@ -1732,7 +2223,7 @@ fn check_two_buffer_bounds(
             format!(
                 "buffer out of bounds for {} ({}), offsets {}+{} or {}+{} > {}",
                 field_name, col_idx, off1, len1, off2, len2, body_len
-            )
+            ),
         ))
     } else {
         Ok(())
@@ -1740,8 +2231,10 @@ fn check_two_buffer_bounds(
 }
 
 /// Converts a Flatbuffers `Field` to the `Minarrow` version
-pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::arrow::flatbuf::Field) -> io::Result<Field> {
-    use crate::arrow::file::org::apache::arrow::flatbuf as fbf; 
+pub fn convert_fb_field_to_arrow(
+    fbf_field: &crate::arrow::file::org::apache::arrow::flatbuf::Field,
+) -> io::Result<Field> {
+    use crate::arrow::file::org::apache::arrow::flatbuf as fbf;
     // name
     let name = fbf_field
         .name()
@@ -1775,12 +2268,17 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
         let idx_ty = match idx.bitWidth() {
             32 => Idx::UInt32,
             #[cfg(feature = "extended_categorical")]
-            8  => Idx::UInt8,
+            8 => Idx::UInt8,
             #[cfg(feature = "extended_categorical")]
             16 => Idx::UInt16,
             #[cfg(feature = "extended_categorical")]
             64 => Idx::UInt64,
-            _  => return Err(io::Error::new(io::ErrorKind::InvalidData, "bad dict idx width"))
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "bad dict idx width",
+                ));
+            }
         };
         ArrowType::Dictionary(idx_ty)
     } else {
@@ -1790,18 +2288,23 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
                 let i = fbf_field.type__as_int().unwrap();
                 match (i.bitWidth(), i.is_signed()) {
                     #[cfg(feature = "extended_numeric_types")]
-                    (8,  true)  => ArrowType::Int8,
+                    (8, true) => ArrowType::Int8,
                     #[cfg(feature = "extended_numeric_types")]
-                    (8,  false) => ArrowType::UInt8,
+                    (8, false) => ArrowType::UInt8,
                     #[cfg(feature = "extended_numeric_types")]
-                    (16, true)  => ArrowType::Int16,
+                    (16, true) => ArrowType::Int16,
                     #[cfg(feature = "extended_numeric_types")]
                     (16, false) => ArrowType::UInt16,
-                    (32, true)  => ArrowType::Int32,
-                    (64, true)  => ArrowType::Int64,
+                    (32, true) => ArrowType::Int32,
+                    (64, true) => ArrowType::Int64,
                     (32, false) => ArrowType::UInt32,
                     (64, false) => ArrowType::UInt64,
-                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported int width")),
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "unsupported int width",
+                        ));
+                    }
                 }
             }
             fbf::Type::FloatingPoint => {
@@ -1809,14 +2312,19 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
                 match f.precision() {
                     fbf::Precision::SINGLE => ArrowType::Float32,
                     fbf::Precision::DOUBLE => ArrowType::Float64,
-                    _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported float prec")),
+                    _ => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "unsupported float prec",
+                        ));
+                    }
                 }
             }
             #[cfg(not(feature = "large_string"))]
-            fbf::Type::Utf8        => ArrowType::String,
+            fbf::Type::Utf8 => ArrowType::String,
             #[cfg(feature = "large_string")]
-            fbf::Type::Utf8   => ArrowType::LargeString,
-            fbf::Type::Bool        => ArrowType::Boolean,
+            fbf::Type::Utf8 => ArrowType::LargeString,
+            fbf::Type::Bool => ArrowType::Boolean,
             #[cfg(feature = "datetime")]
             fbf::Type::Date => {
                 let d = fbf_field.type__as_date().ok_or_else(|| {
@@ -1833,7 +2341,10 @@ pub fn convert_fb_field_to_arrow(fbf_field: &crate::arrow::file::org::apache::ar
         }
     };
 
-    Ok(Field { name, dtype: base_type, nullable, metadata })
+    Ok(Field {
+        name,
+        dtype: base_type,
+        nullable,
+        metadata,
+    })
 }
-
-

@@ -59,7 +59,10 @@ pub fn align_8(n: usize) -> usize {
 #[inline(always)]
 pub fn as_bytes<T: Copy>(buf: &[T]) -> &[u8] {
     unsafe {
-        std::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len() * std::mem::size_of::<T>())
+        std::slice::from_raw_parts(
+            buf.as_ptr() as *const u8,
+            buf.len() * std::mem::size_of::<T>(),
+        )
     }
 }
 
@@ -75,20 +78,29 @@ macro_rules! debug_println {
 }
 
 // Helper supporting dictionary columns for tables
-pub (crate) fn extract_dictionary_values_from_col(col: &minarrow::FieldArray) -> Option<Vec<String>> {
+pub(crate) fn extract_dictionary_values_from_col(
+    col: &minarrow::FieldArray,
+) -> Option<Vec<String>> {
     use minarrow::TextArray::*;
     match &col.array {
-        minarrow::Array::TextArray(Categorical32(arr)) => Some(arr.unique_values.iter().cloned().collect()),
+        minarrow::Array::TextArray(Categorical32(arr)) => {
+            Some(arr.unique_values.iter().cloned().collect())
+        }
         #[cfg(feature = "extended_categorical")]
-        minarrow::Array::TextArray(Categorical8(arr)) => Some(arr.unique_values.iter().cloned().collect()),
+        minarrow::Array::TextArray(Categorical8(arr)) => {
+            Some(arr.unique_values.iter().cloned().collect())
+        }
         #[cfg(feature = "extended_categorical")]
-        minarrow::Array::TextArray(Categorical16(arr)) => Some(arr.unique_values.iter().cloned().collect()),
+        minarrow::Array::TextArray(Categorical16(arr)) => {
+            Some(arr.unique_values.iter().cloned().collect())
+        }
         #[cfg(feature = "extended_categorical")]
-        minarrow::Array::TextArray(Categorical64(arr)) => Some(arr.unique_values.iter().cloned().collect()),
-        _ => None
+        minarrow::Array::TextArray(Categorical64(arr)) => {
+            Some(arr.unique_values.iter().cloned().collect())
+        }
+        _ => None,
     }
 }
-
 
 /// Write Parquet-compliant bit-packed Boolean buffer for a sequence of booleans.
 /// Output is LSB0 (least significant bit first, 8 booleans per byte).
@@ -123,6 +135,7 @@ where
 
 /// Unpacks a bit-packed buffer into a Vec<bool>, up to given length.
 pub fn unpack_bits(buf: &[u8], len: usize) -> Vec<bool> {
-    (0..len).map(|i| ((buf[i / 8] >> (i % 8)) & 1) != 0).collect()
+    (0..len)
+        .map(|i| ((buf[i / 8] >> (i % 8)) & 1) != 0)
+        .collect()
 }
-
