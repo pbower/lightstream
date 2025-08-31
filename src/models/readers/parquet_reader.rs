@@ -131,7 +131,7 @@ pub fn read_parquet_table<R: Read + Seek>(mut r: R) -> Result<Table, IoError> {
             field: Field {
                 name: chunk.meta_data.path_in_schema[0].clone(),
                 dtype: ty.clone(),
-                nullable: chunk.meta_data.definition_level == 1,
+                nullable: chunk.meta_data.definition_level >= 1 || def_levels.iter().any(|&b| !b),
                 metadata: Default::default(),
             }
             .into(),
@@ -183,7 +183,7 @@ fn read_data_page_v2<R: Read>(
     };
 
     // 5) decode definition‐levels (we ignore repetition entirely)
-    let def_levels = if cmeta.definition_level == 0 {
+    let def_levels = if cmeta.definition_level == 0 && def.is_empty() {
         vec![true; h.num_rows as usize]
     } else {
         decode_hybrid(&def, 1, h.num_rows as usize)?
@@ -209,7 +209,7 @@ fn read_data_page_v1<R: Read>(
     r.read_to_end(&mut vs)?;
 
     let num_vals = (cmeta.num_values as usize).max(def_levels_count(&def, 1));
-    let def_levels = if cmeta.definition_level == 0 {
+    let def_levels = if cmeta.definition_level == 0 && def.is_empty() {
         vec![true; num_vals]
     } else {
         decode_hybrid(&def, 1, num_vals)?

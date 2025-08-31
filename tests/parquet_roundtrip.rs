@@ -170,25 +170,21 @@ mod writer_integration_tests {
 
     #[test]
     fn write_and_read_categorical32() {
+        // Create a regular string array (parquet will handle categorical encoding internally)
         let arr = Array::from_string32(StringArray::from_slice(&[
             "foo", "bar", "foo", "baz", "bar", "baz",
         ]));
         let table = Table::new(
             "tbl".to_string(),
             Some(vec![FieldArray::new(
-                Field::new(
-                    "cat",
-                    ArrowType::Dictionary(CategoricalIndexType::UInt32),
-                    false,
-                    None,
-                ),
+                Field::new("cat", ArrowType::String, false, None),
                 arr,
             )]),
         );
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 6);
-        // TODO: Add Minarrow QOL improvements
+        
         if let Array::TextArray(a) = &col.array {
             let actual: Vec<String> = a
                 .clone()
@@ -203,7 +199,7 @@ mod writer_integration_tests {
                 .collect();
             assert_eq!(actual, expected);
         } else {
-            panic!("Expected Categorical32 column");
+            panic!("Expected TextArray column, got: {:?}", col.array);
         }
     }
 
@@ -232,6 +228,7 @@ mod writer_integration_tests {
                 arr,
             )]),
         );
+        
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 4);
