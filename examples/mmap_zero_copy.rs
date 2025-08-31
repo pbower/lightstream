@@ -59,10 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn create_large_table() -> Table {
     let n_rows = 10_000; // Reduced size to prevent freezing
     
-    // Create integer column with Vec64 for 64-byte alignment
-    let int_data: Vec<i64> = (0..n_rows).map(|i| i as i64).collect();
+    // Create integer column with Vec64 for 64-byte alignment (collect directly into Vec64)
+    let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
-        data: Buffer::from(Vec64::from_slice(&int_data)),
+        data: Buffer::from(int_data),
         null_mask: None,
     })));
     let int_field = FieldArray::new(
@@ -75,10 +75,10 @@ fn create_large_table() -> Table {
         int_array,
     );
 
-    // Create float column with Vec64 for alignment
-    let float_data: Vec<f64> = (0..n_rows).map(|i| (i as f64) * 0.001 + 3.14159).collect();
+    // Create float column with Vec64 for alignment (collect directly into Vec64)
+    let float_data: Vec64<f64> = (0..n_rows).map(|i| (i as f64) * 0.001 + 3.14159).collect();
     let float_array = Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray {
-        data: Buffer::from(Vec64::from_slice(&float_data)),
+        data: Buffer::from(float_data),
         null_mask: None,
     })));
     let float_field = FieldArray::new(
@@ -91,10 +91,10 @@ fn create_large_table() -> Table {
         float_array,
     );
 
-    // Create string column with simpler, shorter strings
+    // Create string column with simpler, shorter strings (using Vec64 from the start)
     let base_str = "record_"; // Fixed prefix
-    let mut str_data = Vec::new();
-    let mut offsets = Vec::with_capacity(n_rows + 1);
+    let mut str_data = Vec64::new();
+    let mut offsets = Vec64::with_capacity(n_rows + 1);
     offsets.push(0u32);
     
     for i in 0..n_rows {
@@ -102,10 +102,11 @@ fn create_large_table() -> Table {
         str_data.extend_from_slice(record_str.as_bytes());
         offsets.push(str_data.len() as u32);
     }
+    
     let str_array = Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
-        Buffer::from(Vec64::from_slice(&str_data)),
+        Buffer::from(str_data),
         None,
-        Buffer::from(Vec64::from_slice(&offsets)),
+        Buffer::from(offsets),
     ))));
     let str_field = FieldArray::new(
         Field {
@@ -117,16 +118,15 @@ fn create_large_table() -> Table {
         str_array,
     );
 
-    // Create boolean column with Vec64-aligned bitmask (more efficient creation)
-    let bitmask_bytes = {
-        let mut bytes = vec![0u8; (n_rows + 7) / 8];
-        for i in 0..n_rows {
-            if i % 3 == 0 {
-                bytes[i / 8] |= 1 << (i % 8);
-            }
+    // Create boolean column with Vec64-aligned bitmask (using Vec64 directly)
+    let byte_count = (n_rows + 7) / 8;
+    let mut bitmask_bytes = Vec64::with_capacity(byte_count);
+    bitmask_bytes.resize(byte_count, 0u8);
+    for i in 0..n_rows {
+        if i % 3 == 0 {
+            bitmask_bytes[i / 8] |= 1 << (i % 8);
         }
-        bytes
-    };
+    }
     let bool_array = Array::BooleanArray(Arc::new(BooleanArray {
         data: Bitmask::from_bytes(&bitmask_bytes, n_rows),
         null_mask: None,
