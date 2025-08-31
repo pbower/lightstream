@@ -17,6 +17,7 @@ pub mod models {
             pub mod schema;
             pub mod table_stream;
         }
+        #[cfg(feature = "parquet")]
         pub mod parquet {
             pub mod data;
             pub mod metadata;
@@ -34,6 +35,7 @@ pub mod models {
             pub mod table_stream;
         }
         pub mod csv;
+        #[cfg(feature = "parquet")]
         pub mod parquet;
         pub mod tlv;
     }
@@ -44,11 +46,13 @@ pub mod models {
     pub mod readers {
         pub mod ipc {
             pub mod file_table_reader;
+            #[cfg(feature = "mmap")]
             pub mod mmap_table_reader;
             pub mod table_reader;
             pub mod table_stream_reader;
         }
         pub mod csv_reader;
+        #[cfg(feature = "parquet")]
         pub mod parquet_reader;
     }
     pub mod writers {
@@ -57,6 +61,7 @@ pub mod models {
             pub mod table_writer;
         }
         pub mod csv_writer;
+        #[cfg(feature = "parquet")]
         pub mod parquet_writer;
     }
     pub mod streams {
@@ -64,8 +69,10 @@ pub mod models {
         pub mod framed_byte_stream;
     }
     pub mod types {
+        #[cfg(feature = "parquet")]
         pub mod parquet;
     }
+    #[cfg(feature = "mmap")]
     pub mod mmap;
 }
 

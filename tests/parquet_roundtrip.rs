@@ -1,5 +1,6 @@
+#[cfg(feature = "parquet")]
 #[cfg(test)]
-mod writer_integration_tests {
+mod parquet_writer_integration_tests {
     use lightstream_io::{
         compression::Compression,
         models::{
