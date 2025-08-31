@@ -8,6 +8,7 @@ use minarrow::{
 #[cfg(feature = "datetime")]
 use minarrow::{DatetimeArray, TemporalArray, TimeUnit};
 use tempfile::NamedTempFile;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 use crate::{
@@ -431,3 +432,4 @@ pub async fn write_test_table_to_ipc_stream(
     }
     Ok(chunks)
 }
+
