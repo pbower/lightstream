@@ -9,10 +9,11 @@
 use lightstream_io::enums::IPCMessageProtocol;
 use lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
 use lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
+use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
 use lightstream_io::models::streams::disk::DiskByteStream;
 use lightstream_io::enums::BufferChunkSize;
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray, BooleanArray, Bitmask};
+use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, StringArray};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -90,19 +91,24 @@ async fn file_protocol_example(file_path: &Path) -> Result<(), Box<dyn std::erro
 
     println!("  Reading File protocol data...");
     
-    // Read using TableStreamReader with File protocol
-    let disk_stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(8192)).await?;
-    let mut reader = TableStreamReader64::new(disk_stream, 8192, IPCMessageProtocol::File);
+    // Read using FileTableReader for File protocol (more appropriate)
+    let reader = FileTableReader::open(file_path)?;
     
     let mut batch_count = 0;
     let mut total_rows = 0;
     
-    while let Some(result) = reader.next().await {
-        let table = result?;
-        batch_count += 1;
-        total_rows += table.n_rows;
-        
-        println!("    Batch {}: {} rows", batch_count, table.n_rows);
+    // Read all batches from the file
+    let mut batch_index = 0;
+    loop {
+        match reader.read_batch(batch_index) {
+            Ok(table) => {
+                batch_count += 1;
+                total_rows += table.n_rows;
+                println!("    Batch {}: {} rows", batch_count, table.n_rows);
+                batch_index += 1;
+            }
+            Err(_) => break, // No more batches
+        }
     }
     
     println!("  ✓ Read {} batches, {} total rows", batch_count, total_rows);
@@ -136,9 +142,10 @@ async fn large_dataset_example(large_path: &Path) -> Result<(), Box<dyn std::err
         total_rows += table.n_rows;
         
         // Perform some computation on each batch without storing it
-        if let Array::NumericArray(NumericArray::Float64(float_arr)) = &table.cols[1].array {
-            for &value in float_arr.data.as_ref() {
-                sum_of_values += value;
+        // Since we now use the same schema, col[1] is a string, so let's compute on the integer column
+        if let Array::NumericArray(NumericArray::Int32(int_arr)) = &table.cols[0].array {
+            for &value in int_arr.data.as_ref() {
+                sum_of_values += value as f64; // Convert to f64 for the sum
             }
         }
         
@@ -151,7 +158,7 @@ async fn large_dataset_example(large_path: &Path) -> Result<(), Box<dyn std::err
     let duration = start_time.elapsed();
     
     println!("  ✓ Processed {} batches, {} total rows in {:?}", batch_count, total_rows, duration);
-    println!("    Average value: {:.2}", sum_of_values / total_rows as f64);
+    println!("    Sum of sequence IDs: {:.0}", sum_of_values);
     println!("    Memory-efficient: each batch processed and discarded");
     
     Ok(())
@@ -217,7 +224,7 @@ fn create_small_sample_tables(num_tables: usize) -> Vec<Table> {
     tables
 }
 
-/// Create larger sample tables for performance testing
+/// Create larger sample tables for performance testing (same schema as small tables)
 fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
     let mut tables = Vec::new();
     
@@ -225,7 +232,7 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
         let n_rows = 5000; // Larger batches
         let start_val = i * 5000;
         
-        // Integer column
+        // Integer column (same name as small tables)
         let int_data: Vec<i32> = (start_val..start_val + n_rows).map(|x| x as i32).collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
             data: Buffer::from(Vec64::from_slice(&int_data)),
@@ -233,7 +240,7 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
         })));
         let int_field = FieldArray::new(
             Field {
-                name: "id".into(),
+                name: "sequence_id".into(), // Same as small tables
                 dtype: ArrowType::Int32,
                 nullable: false,
                 metadata: Default::default(),
@@ -241,55 +248,36 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
             int_array,
         );
 
-        // Float column with some computation
-        let float_data: Vec<f64> = (0..n_rows)
-            .map(|j| (j as f64 + i as f64 * 1000.0) * 0.01 + 42.0)
+        // String column (same name as small tables)
+        let individual_strings: Vec<String> = (0..n_rows)
+            .map(|j| format!("large_batch_{}_item_{:04}", i, j))
             .collect();
-        let float_array = Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray {
-            data: Buffer::from(Vec64::from_slice(&float_data)),
-            null_mask: None,
-        })));
-        let float_field = FieldArray::new(
+        let mut str_data = Vec::new();
+        let mut offsets = Vec::with_capacity(n_rows + 1);
+        offsets.push(0u32);
+        for s in &individual_strings {
+            str_data.extend_from_slice(s.as_bytes());
+            offsets.push(str_data.len() as u32);
+        }
+        let str_array = Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
+            Buffer::from(Vec64::from_slice(&str_data)),
+            None,
+            Buffer::from(Vec64::from_slice(&offsets)),
+        ))));
+        let str_field = FieldArray::new(
             Field {
-                name: "measurement".into(),
-                dtype: ArrowType::Float64,
+                name: "label".into(), // Same as small tables
+                dtype: ArrowType::String,
                 nullable: false,
                 metadata: Default::default(),
             },
-            float_array,
-        );
-
-        // Boolean column
-        let bool_data: Vec<bool> = (0..n_rows).map(|j| (i + j) % 7 == 0).collect();
-        let bitmask_bytes = {
-            let mut bytes = vec![0u8; (n_rows + 7) / 8];
-            for (j, &value) in bool_data.iter().enumerate() {
-                if value {
-                    bytes[j / 8] |= 1 << (j % 8);
-                }
-            }
-            bytes
-        };
-        let bool_array = Array::BooleanArray(Arc::new(BooleanArray {
-            data: Bitmask::from_bytes(&bitmask_bytes, n_rows),
-            null_mask: None,
-            len: n_rows,
-            _phantom: std::marker::PhantomData,
-        }));
-        let bool_field = FieldArray::new(
-            Field {
-                name: "is_special".into(),
-                dtype: ArrowType::Boolean,
-                nullable: false,
-                metadata: Default::default(),
-            },
-            bool_array,
+            str_array,
         );
 
         tables.push(Table {
             name: format!("large_batch_{}", i),
             n_rows,
-            cols: vec![int_field, float_field, bool_field],
+            cols: vec![int_field, str_field], // Same schema as small tables
         });
     }
     
