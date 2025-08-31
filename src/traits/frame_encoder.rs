@@ -33,8 +33,8 @@ pub trait FrameEncoder {
     /// Returns `Err` if encoding fails.
     ///
     /// ### Args
-    ///     - *global_offset*: keeps track of the pointer position across frames
-    ///     - *frame*: the frame being encoded
+    /// * `global_offset`: keeps track of the pointer position across frames
+    /// * `frame`: the frame being encoded
     fn encode<'a, B: StreamBuffer>(
         global_offset: &mut usize,
         frame: &Self::Frame<'a>,
