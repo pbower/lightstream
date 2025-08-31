@@ -185,7 +185,7 @@ mod parquet_writer_integration_tests {
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 6);
-        
+
         if let Array::TextArray(a) = &col.array {
             let actual: Vec<String> = a
                 .clone()
@@ -229,7 +229,7 @@ mod parquet_writer_integration_tests {
                 arr,
             )]),
         );
-        
+
         let out = roundtrip_table(&table, Compression::None);
         let col = out.col(0).unwrap();
         assert_eq!(col.len(), 4);

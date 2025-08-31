@@ -2,21 +2,21 @@
 mod integration {
     use std::sync::Arc;
 
+    use ::lightstream_io::arrow::message::org::apache::arrow::flatbuf as fb;
     use ::lightstream_io::enums::BufferChunkSize;
+    use ::lightstream_io::enums::DecodeResult;
     use ::lightstream_io::enums::IPCMessageProtocol;
-    use ::lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
+    use ::lightstream_io::models::decoders::ipc::protocol::ArrowIPCFrameDecoder;
     use ::lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
+    use ::lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
     use ::lightstream_io::models::streams::disk::DiskByteStream;
+    use ::lightstream_io::models::writers::ipc::table_stream_writer::write_tables_to_stream;
     use ::lightstream_io::models::writers::ipc::table_writer::TableWriter;
+    use ::lightstream_io::traits::frame_decoder::FrameDecoder;
     use futures_util::stream::StreamExt;
     use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
     use minarrow::*;
     use minarrow::{Array, TextArray, Vec64};
-    use ::lightstream_io::models::writers::ipc::table_stream_writer::write_tables_to_stream;
-    use ::lightstream_io::models::decoders::ipc::protocol::ArrowIPCFrameDecoder;
-    use ::lightstream_io::traits::frame_decoder::FrameDecoder;
-    use ::lightstream_io::enums::DecodeResult;
-    use ::lightstream_io::arrow::message::org::apache::arrow::flatbuf as fb;
 
     /// Write tables to a file in Arrow stream format
     async fn write_stream_tables_to_file(
@@ -25,10 +25,16 @@ mod integration {
         schema: &[Field],
     ) -> std::io::Result<()> {
         let file = tokio::fs::File::create(file_path).await?;
-        
+
         // Use the existing stream writer function to write to the file
-        write_tables_to_stream::<_, Vec64<u8>>(file, tables, schema.to_vec(), IPCMessageProtocol::Stream).await?;
-        
+        write_tables_to_stream::<_, Vec64<u8>>(
+            file,
+            tables,
+            schema.to_vec(),
+            IPCMessageProtocol::Stream,
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -271,50 +277,73 @@ mod integration {
             IPCMessageProtocol::File => {
                 // Debug: check what's in the file format
                 let file_data = std::fs::read(&path).unwrap();
-                println!("FILE format file size: {}, first 16 bytes: {:02X?}", 
-                    file_data.len(), &file_data[..16.min(file_data.len())]);
-                
+                println!(
+                    "FILE format file size: {}, first 16 bytes: {:02X?}",
+                    file_data.len(),
+                    &file_data[..16.min(file_data.len())]
+                );
+
                 let reader = FileTableReader::open(&path).unwrap();
                 reader.read_batch(0).unwrap()
             }
             IPCMessageProtocol::Stream => {
                 // Debug: check what's in the file
                 let file_data = std::fs::read(&path).unwrap();
-                println!("Stream file size: {}, first 16 bytes: {:02X?}", 
-                    file_data.len(), &file_data[..16.min(file_data.len())]);
-                
+                println!(
+                    "Stream file size: {}, first 16 bytes: {:02X?}",
+                    file_data.len(),
+                    &file_data[..16.min(file_data.len())]
+                );
+
                 let mut stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
                     .await
                     .unwrap();
-                    
+
                 // Debug: try to read some data from the stream directly and examine frame parsing
                 use futures_util::StreamExt;
                 if let Some(chunk_result) = stream.next().await {
                     match chunk_result {
                         Ok(chunk) => {
-                            println!("Stream first chunk: {} bytes, first 16: {:02X?}", 
-                                chunk.len(), &chunk.as_ref()[..16.min(chunk.len())]);
-                            
+                            println!(
+                                "Stream first chunk: {} bytes, first 16: {:02X?}",
+                                chunk.len(),
+                                &chunk.as_ref()[..16.min(chunk.len())]
+                            );
+
                             // Test frame decoder directly
-                            let mut decoder = ArrowIPCFrameDecoder::<Vec64<u8>>::new(IPCMessageProtocol::Stream);
+                            let mut decoder =
+                                ArrowIPCFrameDecoder::<Vec64<u8>>::new(IPCMessageProtocol::Stream);
                             match decoder.decode(chunk.as_ref()) {
                                 Ok(result) => {
-                                    println!("Frame decode result: {}", 
-                                        if let DecodeResult::Frame { .. } = &result { 
-                                            "frame produced" 
-                                        } else { 
-                                            "incomplete" 
-                                        });
-                                    
+                                    println!(
+                                        "Frame decode result: {}",
+                                        if let DecodeResult::Frame { .. } = &result {
+                                            "frame produced"
+                                        } else {
+                                            "incomplete"
+                                        }
+                                    );
+
                                     // Examine the message header if we got a frame
                                     if let DecodeResult::Frame { frame, .. } = result {
                                         if !frame.message.is_empty() {
-                                            match flatbuffers::root::<fb::Message>(&frame.message.as_ref()) {
+                                            match flatbuffers::root::<fb::Message>(
+                                                &frame.message.as_ref(),
+                                            ) {
                                                 Ok(af_msg) => {
-                                                    println!("Message header type: {:?}", af_msg.header_type());
-                                                    println!("Message version: {:?}", af_msg.version());
+                                                    println!(
+                                                        "Message header type: {:?}",
+                                                        af_msg.header_type()
+                                                    );
+                                                    println!(
+                                                        "Message version: {:?}",
+                                                        af_msg.version()
+                                                    );
                                                 }
-                                                Err(e) => println!("Failed to parse flatbuffer message: {}", e)
+                                                Err(e) => println!(
+                                                    "Failed to parse flatbuffer message: {}",
+                                                    e
+                                                ),
                                             }
                                         } else {
                                             println!("Frame has empty message");
@@ -323,39 +352,43 @@ mod integration {
                                 }
                                 Err(e) => println!("Frame decode error: {}", e),
                             }
-                        },
+                        }
                         Err(e) => println!("Stream error: {}", e),
                     }
                 } else {
                     println!("Stream returned None immediately");
                 }
-                
+
                 // Reset stream for actual reading
                 let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
                     .await
                     .unwrap();
-                let mut reader = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
-                
+                let mut reader =
+                    TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
+
                 // Debug the reader state
                 println!("Reader created, protocol: {:?}", reader.protocol());
                 println!("Reader finished: {}", reader.is_finished());
                 println!("Reader schema: {:?}", reader.schema());
-                
+
                 match reader.next().await {
                     Some(Ok(table)) => {
                         println!("Successfully read table with {} rows", table.n_rows);
                         table
-                    },
+                    }
                     Some(Err(e)) => panic!("Reader error: {}", e),
                     None => {
-                        println!("Reader state after None - finished: {}, error: {:?}", 
-                            reader.is_finished(), reader.last_error());
+                        println!(
+                            "Reader state after None - finished: {}, error: {:?}",
+                            reader.is_finished(),
+                            reader.last_error()
+                        );
                         panic!("Reader returned None - no data found")
                     }
                 }
             }
         };
-        
+
         // Fix table name to match original for comparison
         table2.name = table.name.clone();
 
@@ -375,36 +408,42 @@ mod integration {
 
     /// In-memory stream roundtrip test (proper stream protocol test)
     async fn roundtrip_ipc_stream_memory(n_rows: usize) {
-        use tokio::io::{duplex, AsyncWriteExt, AsyncRead};
-        use std::task::{Context, Poll};
-        use std::pin::Pin;
-        use futures_core::Stream;
-        use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
         use ::lightstream_io::models::readers::ipc::table_reader::TableReader;
-        
+        use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
+        use futures_core::Stream;
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+        use tokio::io::{AsyncRead, AsyncWriteExt, duplex};
+
         let table = build_all_types_table(n_rows);
         let schema = vec![
             Field::new("int32", ArrowType::Int32, false, None),
-            Field::new("int64", ArrowType::Int64, false, None), 
+            Field::new("int64", ArrowType::Int64, false, None),
             Field::new("uint32", ArrowType::UInt32, false, None),
             Field::new("uint64", ArrowType::UInt64, false, None),
             Field::new("float32", ArrowType::Float32, false, None),
             Field::new("float64", ArrowType::Float64, false, None),
             Field::new("bool", ArrowType::Boolean, false, None),
             Field::new("string", ArrowType::String, false, None),
-            Field::new("cat32", ArrowType::Dictionary(CategoricalIndexType::UInt32), false, None),
+            Field::new(
+                "cat32",
+                ArrowType::Dictionary(CategoricalIndexType::UInt32),
+                false,
+                None,
+            ),
         ];
-        
+
         // Write to in-memory stream using TableStreamWriter
         let (mut tx, rx) = duplex(64 * 1024);
-        
-        let mut writer = TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+
+        let mut writer =
+            TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         for (dict_id, unique) in dicts_for_table(&table) {
             writer.register_dictionary(dict_id, unique.to_vec());
         }
         writer.write(&table).unwrap();
         writer.finish().unwrap();
-        
+
         // Collect frames and write to duplex
         let mut all_bytes = Vec::new();
         while let Some(frame) = writer.next_frame() {
@@ -413,7 +452,7 @@ mod integration {
         }
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
-        
+
         // Create a combined stream wrapper (like in working unit tests)
         struct Combined<R> {
             reader: R,
@@ -448,50 +487,56 @@ mod integration {
                 Pin::new(&mut self.reader).poll_read(cx, buf)
             }
         }
-        
+
         let combined = Combined { reader: rx };
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let tables = reader.read_all_tables().await.unwrap();
-        
+
         assert_eq!(tables.len(), 1);
         let mut table2 = tables.into_iter().next().unwrap();
         table2.name = table.name.clone(); // Fix name for comparison
-        
+
         assert_eq!(table, table2);
     }
 
     /// In-memory stream roundtrip test with nulls (proper stream protocol test)
     async fn roundtrip_ipc_stream_memory_with_nulls(n_rows: usize) {
-        use tokio::io::{duplex, AsyncWriteExt, AsyncRead};
-        use std::task::{Context, Poll};
-        use std::pin::Pin;
-        use futures_core::Stream;
-        use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
         use ::lightstream_io::models::readers::ipc::table_reader::TableReader;
-        
+        use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
+        use futures_core::Stream;
+        use std::pin::Pin;
+        use std::task::{Context, Poll};
+        use tokio::io::{AsyncRead, AsyncWriteExt, duplex};
+
         let table = build_all_types_table(n_rows); // Use regular table for now
         let schema = vec![
             Field::new("int32", ArrowType::Int32, false, None),
-            Field::new("int64", ArrowType::Int64, false, None), 
+            Field::new("int64", ArrowType::Int64, false, None),
             Field::new("uint32", ArrowType::UInt32, false, None),
             Field::new("uint64", ArrowType::UInt64, false, None),
             Field::new("float32", ArrowType::Float32, false, None),
             Field::new("float64", ArrowType::Float64, false, None),
             Field::new("bool", ArrowType::Boolean, false, None),
             Field::new("string", ArrowType::String, false, None),
-            Field::new("cat32", ArrowType::Dictionary(CategoricalIndexType::UInt32), false, None),
+            Field::new(
+                "cat32",
+                ArrowType::Dictionary(CategoricalIndexType::UInt32),
+                false,
+                None,
+            ),
         ];
-        
+
         // Write to in-memory stream using TableStreamWriter
         let (mut tx, rx) = duplex(64 * 1024);
-        
-        let mut writer = TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
+
+        let mut writer =
+            TableStreamWriter::<Vec<u8>>::new(schema.clone(), IPCMessageProtocol::Stream);
         for (dict_id, unique) in dicts_for_table(&table) {
             writer.register_dictionary(dict_id, unique.to_vec());
         }
         writer.write(&table).unwrap();
         writer.finish().unwrap();
-        
+
         // Collect frames and write to duplex
         let mut all_bytes = Vec::new();
         while let Some(frame) = writer.next_frame() {
@@ -500,7 +545,7 @@ mod integration {
         }
         tx.write_all(&all_bytes).await.unwrap();
         drop(tx);
-        
+
         // Create a combined stream wrapper (like in working unit tests)
         struct Combined<R> {
             reader: R,
@@ -535,15 +580,15 @@ mod integration {
                 Pin::new(&mut self.reader).poll_read(cx, buf)
             }
         }
-        
+
         let combined = Combined { reader: rx };
         let reader = TableReader::new(combined, 1024, IPCMessageProtocol::Stream);
         let tables = reader.read_all_tables().await.unwrap();
-        
+
         assert_eq!(tables.len(), 1);
         let mut table2 = tables.into_iter().next().unwrap();
         table2.name = table.name.clone(); // Fix name for comparison
-        
+
         assert_eq!(table, table2);
     }
 
@@ -652,11 +697,15 @@ mod integration {
                 IPCMessageProtocol::Stream => {
                     let mut table_with_dict = table.clone();
                     // Register dictionary in the table's categorical column
-                    if let Array::TextArray(TextArray::Categorical32(cat_arr)) = &mut table_with_dict.cols[3].array {
+                    if let Array::TextArray(TextArray::Categorical32(cat_arr)) =
+                        &mut table_with_dict.cols[3].array
+                    {
                         let cat_arr = Arc::make_mut(cat_arr);
                         cat_arr.unique_values = Vec64::from(uniqs);
                     }
-                    write_stream_tables_to_file(&path, &[table_with_dict], &schema).await.unwrap();
+                    write_stream_tables_to_file(&path, &[table_with_dict], &schema)
+                        .await
+                        .unwrap();
                 }
             }
         }
@@ -671,11 +720,12 @@ mod integration {
                 let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
                     .await
                     .unwrap();
-                let mut reader = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
+                let mut reader =
+                    TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
                 reader.next().await.unwrap().unwrap()
             }
         };
-        
+
         // Fix table name to match original for comparison
         roundtripped.name = table.name.clone();
         assert_eq!(roundtripped, table); // derives PartialEq so includes masks
@@ -707,7 +757,7 @@ mod integration {
         // ---------- read file via FileTableReader ----------
         let reader = FileTableReader::open(&p).unwrap();
         let mut roundtripped = reader.read_batch(0).unwrap();
-        
+
         // Fix table name to match original for comparison
         roundtripped.name = table.name.clone();
 

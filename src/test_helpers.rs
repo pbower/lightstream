@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
-use minarrow::StringArray;
 use minarrow::{
     Array, ArrowType, Bitmask, Buffer, CategoricalArray, Field, FieldArray, FloatArray,
-    IntegerArray, NumericArray, Table, TextArray, Vec64,
+    IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64,
 };
-#[cfg(feature = "datetime")]
-use minarrow::{DatetimeArray, TemporalArray, TimeUnit};
+use minarrow::{BooleanArray, ffi::arrow_dtype::CategoricalIndexType};
 use tempfile::NamedTempFile;
+#[cfg(feature = "datetime")]
+use {DatetimeArray, TemporalArray, TimeUnit};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
@@ -118,7 +118,7 @@ pub(crate) fn bool_col() -> FieldArray {
             nullable: true,
             metadata: Default::default(),
         },
-        Array::BooleanArray(Arc::new(minarrow::BooleanArray {
+        Array::BooleanArray(Arc::new(BooleanArray {
             data: Bitmask::from_bytes(&[0b00001101], 4),
             null_mask: Some(Bitmask::new_set_all(4, true)),
             len: 4,
@@ -135,7 +135,7 @@ pub(crate) fn string32_col() -> FieldArray {
             nullable: true,
             metadata: Default::default(),
         },
-        Array::TextArray(TextArray::String32(Arc::new(minarrow::StringArray::new(
+        Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
             Buffer::from(Vec64::from_slice("helloworldxx".as_bytes())),
             Some(Bitmask::new_set_all(4, true)),
             Buffer::from(Vec64::from_slice(&[0u32, 4, 9, 11, 12])),
@@ -147,7 +147,7 @@ pub(crate) fn dict32_col() -> FieldArray {
     FieldArray::new(
         Field {
             name: "dict32".into(),
-            dtype: ArrowType::Dictionary(minarrow::ffi::arrow_dtype::CategoricalIndexType::UInt32),
+            dtype: ArrowType::Dictionary(CategoricalIndexType::UInt32),
             nullable: true,
             metadata: Default::default(),
         },
@@ -216,7 +216,7 @@ pub(crate) fn string64_col() -> FieldArray {
 
 #[cfg(feature = "extended_categorical")]
 pub(crate) fn dict8_col() -> FieldArray {
-    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
+    use ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict8".into(),
@@ -234,7 +234,7 @@ pub(crate) fn dict8_col() -> FieldArray {
 
 #[cfg(feature = "extended_categorical")]
 pub(crate) fn dict16_col() -> FieldArray {
-    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
+    use ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict16".into(),
@@ -252,7 +252,7 @@ pub(crate) fn dict16_col() -> FieldArray {
 
 #[cfg(feature = "extended_categorical")]
 pub(crate) fn dict64_col() -> FieldArray {
-    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
+    use ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict64".into(),
@@ -335,6 +335,7 @@ pub(crate) fn uint16_col() -> FieldArray {
 // -------------------- Table Generator -------------------- //
 
 pub(crate) fn make_all_types_table() -> Table {
+    #[allow(unused_mut)]
     let mut cols = vec![
         int32_col(),
         int64_col(),
@@ -432,4 +433,3 @@ pub async fn write_test_table_to_ipc_stream(
     }
     Ok(chunks)
 }
-
