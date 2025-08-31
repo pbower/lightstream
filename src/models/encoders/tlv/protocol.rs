@@ -2,7 +2,6 @@ use crate::models::frames::tlv_frame::TLVFrame;
 use crate::traits::frame_encoder::FrameEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
 use std::io;
-// use crate::utils::align_to;
 
 pub struct TLVEncoder;
 
@@ -27,14 +26,15 @@ impl FrameEncoder for TLVEncoder {
         let mut out = B::with_capacity(1 + 4 + len);
         out.push(frame.t);
         out.extend_from_slice(&(len as u32).to_le_bytes());
-        *global_offset += 4;
+        *global_offset += 5; // type (1) + length (4)
         out.extend_from_slice(frame.value);
         *global_offset += frame.value.len();
-        // TODO: Integrate padding
-        // let pad_size = align_to::<B>(*global_offset);
-        // if pad_size != 0 {
-        //     out.extend_from_slice(&[0u8; 64][..pad_size]);
-        // }
+        
+        // Note: TLV padding is intentionally not implemented here as TLV is meant to be 
+        // a simple wire format. Alignment padding would be more appropriate at a higher 
+        // level protocol layer if needed for specific use cases (e.g., when embedding
+        // TLV frames within Arrow IPC contexts).
+        
         Ok((out, ()))
     }
 }
