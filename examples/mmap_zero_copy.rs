@@ -10,8 +10,8 @@ use lightstream_io::enums::IPCMessageProtocol;
 use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 #[cfg(feature = "mmap")]
 use lightstream_io::models::readers::ipc::mmap_table_reader::MmapTableReader;
-use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray, BooleanArray, Bitmask};
+use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
+use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, CategoricalArray, BooleanArray, Bitmask};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -52,21 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Create a large table with pre-built standard buffers
 fn create_large_table() -> Table {
-    let n_rows = 100_000;
+    let n_rows = 1_000_000;
     
-    // Pre-create standard string data - just repeat "test_string" pattern
-    let test_string = b"test_string";
-    let string_len = test_string.len();
-    let total_string_bytes = n_rows * string_len;
-    
-    let mut str_data = Vec64::with_capacity(total_string_bytes);
-    let mut offsets = Vec64::with_capacity(n_rows + 1);
-    offsets.push(0u32);
-    
-    for _ in 0..n_rows {
-        str_data.extend_from_slice(test_string);
-        offsets.push(str_data.len() as u32);
-    }
+    // Just create another numeric column - simple and fast
+    let extra_data: Vec64<u32> = (0..n_rows).map(|i| (i % 1000) as u32).collect();
     
     // Create arrays from pre-built buffers
     let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
@@ -80,7 +69,7 @@ fn create_large_table() -> Table {
     // Build table with pre-created buffers
     let int_array = Arc::new(IntegerArray::new(Buffer::from(int_data), None));
     let float_array = Arc::new(FloatArray::new(Buffer::from(float_data), None));
-    let str_array = Arc::new(StringArray::new(Buffer::from(str_data), None, Buffer::from(offsets)));
+    let extra_array = Arc::new(IntegerArray::new(Buffer::from(extra_data), None));
     let bool_array = Arc::new(BooleanArray::new(bitmask, None));
     
     Table {
@@ -96,8 +85,8 @@ fn create_large_table() -> Table {
                 Array::NumericArray(NumericArray::Float64(float_array))
             ),
             FieldArray::new(
-                Field { name: "label".into(), dtype: ArrowType::String, nullable: false, metadata: Default::default() },
-                Array::TextArray(TextArray::String32(str_array))
+                Field { name: "extra".into(), dtype: ArrowType::UInt32, nullable: false, metadata: Default::default() },
+                Array::NumericArray(NumericArray::UInt32(extra_array))
             ),
             FieldArray::new(
                 Field { name: "is_even".into(), dtype: ArrowType::Boolean, nullable: false, metadata: Default::default() },
