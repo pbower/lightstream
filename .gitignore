@@ -27,5 +27,5 @@ target
 ###########################
 # Repo additions
 ###########################
-# Folder for notebook testing files import into python
-pydev
+# Pyarrow roundtrip testing
+python

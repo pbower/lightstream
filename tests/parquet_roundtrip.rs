@@ -9,7 +9,7 @@ mod writer_integration_tests {
     };
     use minarrow::{
         Array, ArrowType, Bitmask, Field, FieldArray, IntegerArray, MaskedArray, NumericArray,
-        StringArray, Table, ffi::arrow_dtype::CategoricalIndexType, vec64,
+        StringArray, Table, vec64,
     };
     use std::io::{Cursor, Seek, SeekFrom};
 

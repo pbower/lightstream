@@ -7,7 +7,6 @@ mod integration {
     use ::lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
     use ::lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
     use ::lightstream_io::models::streams::disk::DiskByteStream;
-    use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
     use ::lightstream_io::models::writers::ipc::table_writer::TableWriter;
     use futures_util::stream::StreamExt;
     use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
@@ -122,7 +121,7 @@ mod integration {
             None,
         );
 
-        let mut cols = vec![
+        let cols = vec![
             FieldArray::new(
                 Field::new("int32", ArrowType::Int32, false, None),
                 Array::NumericArray(int32),

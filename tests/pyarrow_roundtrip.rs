@@ -148,7 +148,7 @@ mod pyarrow_roundtrip_tests {
         println!("Testing PyArrow → lightstream-io roundtrip (file format)");
         
         // Read PyArrow-generated Arrow file
-        let file_path = "pydev/pyarrow_basic_types.arrow";
+        let file_path = "python/pyarrow_basic_types.arrow";
         let reader = FileTableReader::open(file_path).expect("Failed to open file");
         
         // Read the first (and likely only) table
@@ -171,7 +171,7 @@ mod pyarrow_roundtrip_tests {
         println!("Testing PyArrow → lightstream-io roundtrip (stream format)");
         
         // Read PyArrow-generated Arrow stream
-        let file_path = "pydev/pyarrow_basic_types.stream";
+        let file_path = "python/pyarrow_basic_types.stream";
         use ::lightstream_io::enums::BufferChunkSize;
         let stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(1024)).await.expect("Failed to create stream");
         let mut reader = TableStreamReader64::new(stream, 1024, IPCMessageProtocol::Stream);
@@ -205,14 +205,14 @@ mod pyarrow_roundtrip_tests {
         let schema = test_table.cols.iter().map(|col| (*col.field).clone()).collect::<Vec<_>>();
         
         // Write with lightstream-io to file format
-        let file_path = "pydev/lightstream_basic_types.arrow";
+        let file_path = "python/lightstream_basic_types.arrow";
         write_tables_to_file(file_path, &[test_table], schema)
             .await
             .expect("Failed to write table to file");
         
         println!("Wrote lightstream-io file to: {}", file_path);
         println!("✅ lightstream-io file format written successfully!");
-        println!("Run `python3 pydev/validate_lightstream_output.py` to validate with PyArrow");
+        println!("Run `python3 python/validate_lightstream_output.py` to validate with PyArrow");
     }
 
     #[tokio::test]
@@ -224,7 +224,7 @@ mod pyarrow_roundtrip_tests {
         let schema = test_table.cols.iter().map(|col| (*col.field).clone()).collect::<Vec<_>>();
         
         // Write with lightstream-io to stream format
-        let file_path = "pydev/lightstream_basic_types.stream";
+        let file_path = "python/lightstream_basic_types.stream";
         let file = tokio::fs::File::create(file_path).await.expect("Failed to create stream file");
         
         write_tables_to_stream::<_, Vec64<u8>>(file, &[test_table], schema, IPCMessageProtocol::Stream)
@@ -233,6 +233,6 @@ mod pyarrow_roundtrip_tests {
         
         println!("Wrote lightstream-io stream to: {}", file_path);
         println!("✅ lightstream-io stream format written successfully!");
-        println!("Run `python3 pydev/validate_lightstream_output.py` to validate with PyArrow");
+        println!("Run `python3 python/validate_lightstream_output.py` to validate with PyArrow");
     }
 }
