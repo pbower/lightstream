@@ -8,7 +8,6 @@
 
 use lightstream_io::enums::IPCMessageProtocol;
 use lightstream_io::models::writers::ipc::table_writer::TableWriter;
-use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
 #[cfg(feature = "mmap")]
 use lightstream_io::models::readers::ipc::mmap_table_reader::MmapTableReader;
 use minarrow::ffi::arrow_dtype::ArrowType;
@@ -36,117 +35,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n1. Writing to Arrow IPC File");
     write_arrow_file(&table, &file_path).await?;
 
-    // Read using regular file I/O
-    println!("\n2. Reading with Regular File I/O");
-    read_with_file_io(&file_path)?;
-
     // Read using memory mapping (zero-copy)
     #[cfg(feature = "mmap")]
     {
-        println!("\n3. Reading with Memory Mapping (Zero-Copy)");
+        println!("\n2. Reading with Memory Mapping (Zero-Copy)");
         read_with_mmap(&file_path)?;
     }
 
     #[cfg(not(feature = "mmap"))]
-    println!("\n3. Memory mapping not available (mmap feature not enabled)");
+    println!("\n2. Memory mapping not available (mmap feature not enabled)");
 
     println!("\n✓ Memory-mapped zero-copy example completed!");
 
     Ok(())
 }
 
-/// Create a large table with Vec64-aligned data for zero-copy benefits
+/// Create a large table with pre-built standard buffers
 fn create_large_table() -> Table {
-    let n_rows = 10_000; // Reduced size to prevent freezing
+    let n_rows = 100_000;
     
-    // Create integer column with Vec64 for 64-byte alignment (collect directly into Vec64)
-    let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
-    let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
-        data: Buffer::from(int_data),
-        null_mask: None,
-    })));
-    let int_field = FieldArray::new(
-        Field {
-            name: "id".into(),
-            dtype: ArrowType::Int64,
-            nullable: false,
-            metadata: Default::default(),
-        },
-        int_array,
-    );
-
-    // Create float column with Vec64 for alignment (collect directly into Vec64)
-    let float_data: Vec64<f64> = (0..n_rows).map(|i| (i as f64) * 0.001 + 3.14159).collect();
-    let float_array = Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray {
-        data: Buffer::from(float_data),
-        null_mask: None,
-    })));
-    let float_field = FieldArray::new(
-        Field {
-            name: "measurement".into(),
-            dtype: ArrowType::Float64,
-            nullable: false,
-            metadata: Default::default(),
-        },
-        float_array,
-    );
-
-    // Create string column with simpler, shorter strings (using Vec64 from the start)
-    let base_str = "record_"; // Fixed prefix
-    let mut str_data = Vec64::new();
+    // Pre-create standard string data - just repeat "test_string" pattern
+    let test_string = b"test_string";
+    let string_len = test_string.len();
+    let total_string_bytes = n_rows * string_len;
+    
+    let mut str_data = Vec64::with_capacity(total_string_bytes);
     let mut offsets = Vec64::with_capacity(n_rows + 1);
     offsets.push(0u32);
     
-    for i in 0..n_rows {
-        let record_str = format!("{}{:04}", base_str, i % 1000); // Cycle every 1000 for efficiency
-        str_data.extend_from_slice(record_str.as_bytes());
+    for _ in 0..n_rows {
+        str_data.extend_from_slice(test_string);
         offsets.push(str_data.len() as u32);
     }
     
-    let str_array = Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
-        Buffer::from(str_data),
-        None,
-        Buffer::from(offsets),
-    ))));
-    let str_field = FieldArray::new(
-        Field {
-            name: "label".into(),
-            dtype: ArrowType::String,
-            nullable: false,
-            metadata: Default::default(),
-        },
-        str_array,
-    );
-
-    // Create boolean column with Vec64-aligned bitmask (using Vec64 directly)
-    let byte_count = (n_rows + 7) / 8;
-    let mut bitmask_bytes = Vec64::with_capacity(byte_count);
-    bitmask_bytes.resize(byte_count, 0u8);
+    // Create arrays from pre-built buffers
+    let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
+    let float_data: Vec64<f64> = (0..n_rows).map(|i| i as f64 * 0.1).collect();
+    
+    let mut bitmask = Bitmask::with_capacity(n_rows);
     for i in 0..n_rows {
-        if i % 3 == 0 {
-            bitmask_bytes[i / 8] |= 1 << (i % 8);
-        }
+        bitmask.set(i, i % 2 == 0);
     }
-    let bool_array = Array::BooleanArray(Arc::new(BooleanArray {
-        data: Bitmask::from_bytes(&bitmask_bytes, n_rows),
-        null_mask: None,
-        len: n_rows,
-        _phantom: std::marker::PhantomData,
-    }));
-    let bool_field = FieldArray::new(
-        Field {
-            name: "is_divisible_by_3".into(),
-            dtype: ArrowType::Boolean,
-            nullable: false,
-            metadata: Default::default(),
-        },
-        bool_array,
-    );
-
+    
+    // Build table with pre-created buffers
+    let int_array = Arc::new(IntegerArray::new(Buffer::from(int_data), None));
+    let float_array = Arc::new(FloatArray::new(Buffer::from(float_data), None));
+    let str_array = Arc::new(StringArray::new(Buffer::from(str_data), None, Buffer::from(offsets)));
+    let bool_array = Arc::new(BooleanArray::new(bitmask, None));
+    
     Table {
         name: "large_aligned_data".to_string(),
         n_rows,
-        cols: vec![int_field, float_field, str_field, bool_field],
+        cols: vec![
+            FieldArray::new(
+                Field { name: "id".into(), dtype: ArrowType::Int64, nullable: false, metadata: Default::default() },
+                int_array.into()
+            ),
+            FieldArray::new(
+                Field { name: "measurement".into(), dtype: ArrowType::Float64, nullable: false, metadata: Default::default() },
+                Array::NumericArray(NumericArray::Float64(float_array))
+            ),
+            FieldArray::new(
+                Field { name: "label".into(), dtype: ArrowType::String, nullable: false, metadata: Default::default() },
+                Array::TextArray(TextArray::String32(str_array))
+            ),
+            FieldArray::new(
+                Field { name: "is_even".into(), dtype: ArrowType::Boolean, nullable: false, metadata: Default::default() },
+                Array::BooleanArray(bool_array)
+            ),
+        ],
     }
 }
 
@@ -168,27 +125,8 @@ async fn write_arrow_file(table: &Table, file_path: &Path) -> Result<(), Box<dyn
     Ok(())
 }
 
-/// Read using regular file I/O (copies data to heap)
-fn read_with_file_io(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let start = std::time::Instant::now();
-    
-    let reader = FileTableReader::open(file_path)?;
-    let table = reader.read_batch(0)?;
-    
-    let read_time = start.elapsed();
-    
-    println!("  Regular I/O read: {:?}", read_time);
-    println!("  Read {} rows, {} columns", table.n_rows, table.cols.len());
-    
-    // Show some sample data
-    if let Array::NumericArray(NumericArray::Int64(int_arr)) = &table.cols[0].array {
-        println!("  Sample int data: {:?}", &int_arr.data.as_ref()[0..5]);
-    }
-    
-    Ok(())
-}
 
-/// Read using memory mapping (zero-copy access)
+/// Read using memory mapping
 #[cfg(feature = "mmap")]
 fn read_with_mmap(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let start = std::time::Instant::now();
@@ -201,12 +139,11 @@ fn read_with_mmap(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("  Memory-mapped read: {:?}", read_time);
     println!("  Read {} rows, {} columns (zero-copy)", table.n_rows, table.cols.len());
     
-    // Show some sample data - this is accessing memory-mapped data directly!
+    // Show some sample data - access memory-mapped data directly
     if let Array::NumericArray(NumericArray::Int64(int_arr)) = &table.cols[0].array {
         println!("  Sample int data (mmap): {:?}", &int_arr.data.as_ref()[0..5]);
     }
-    
-    // Demonstrate the zero-copy benefit
+       
     println!("  ✓ Data accessed directly from memory-mapped file (no copying!)");
     
     Ok(())

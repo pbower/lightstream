@@ -2050,6 +2050,10 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
+    
+    let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
+    debug_println!("Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}", 
+                  field.name, body_offset, data_offset, final_addr, final_addr % 64 == 0);
 
     // Create a wrapper that references the slice we need
     struct SliceWrapper<M: ?Sized> {
@@ -2079,6 +2083,9 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     };
 
     let shared = SharedBuffer::from_owner(wrapper);
+    debug_println!("SharedBuffer pointer for {}: {:p}, aligned: {}", 
+                  field.name, shared.as_slice().as_ptr(), 
+                  shared.as_slice().as_ptr() as usize % 64 == 0);
     let data = minarrow::Buffer::from_shared(shared);
 
     let arr = Arc::new(IntegerArray { data, null_mask });

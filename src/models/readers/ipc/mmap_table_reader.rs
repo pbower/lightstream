@@ -50,6 +50,7 @@ pub struct MmapTableReader {
     dict_blocks: Vec<IPCFileBlock>,
     record_blocks: Vec<IPCFileBlock>,
     dictionaries: std::collections::HashMap<i64, Vec<String>>,
+    aligned_offset: usize, // Offset from original file start to our aligned mmap start
 }
 
 impl MmapTableReader {
@@ -60,15 +61,28 @@ impl MmapTableReader {
 
         debug_println!("MMAP File len: {}", file_len);
 
-        // ---- MMAP file
+        // ---- MMAP entire file and find 64-byte aligned data region
         let mmap = Arc::new(MemMap::<64>::open(
             path.as_ref().to_str().unwrap(),
             0,
             file_len,
         )?);
         let region = Arc::new(MmapBytes { _file: file, mmap });
-
+        
         let data = region.as_ref();
+        
+        // Find the first 64-byte aligned offset after the 6-byte Arrow magic
+        let magic_end = 6;
+        let base_ptr = data.as_ptr() as usize;
+        let aligned_data_offset = {
+            let desired_ptr = base_ptr + magic_end;
+            let aligned_ptr = (desired_ptr + 63) & !63; // Round up to next 64-byte boundary
+            aligned_ptr - base_ptr
+        };
+        
+        debug_println!("Base ptr: 0x{:x}, Magic end: {}, Aligned data offset: {}, Is 64-byte aligned: {}", 
+                      base_ptr, magic_end, aligned_data_offset, 
+                      (base_ptr + aligned_data_offset) % 64 == 0);
 
         if &data[..6] != ARROW_MAGIC_NUMBER {
             return Err(io::Error::new(
@@ -141,6 +155,7 @@ impl MmapTableReader {
             dict_blocks,
             record_blocks,
             dictionaries: std::collections::HashMap::new(),
+            aligned_offset: aligned_data_offset,
         };
 
         rdr.load_all_dictionaries()?;
@@ -201,8 +216,18 @@ impl MmapTableReader {
     fn parse_batch_block(&self, blk: &IPCFileBlock) -> io::Result<Table> {
         let data = self.region.as_ref();
         let meta_slice = self.slice_message(data, blk)?;
-        let body_offset = blk.offset + blk.meta_bytes;
+        let original_body_offset = blk.offset + blk.meta_bytes;
         let body_len = blk.body_bytes;
+        
+        // Adjust body_offset so that buffer addresses land on 64-byte boundaries
+        // The first buffer in the body is at offset 0, so we want:
+        // (data.as_ptr() + adjusted_body_offset + 0) to be 64-byte aligned
+        let data_base_addr = data.as_ptr() as usize;
+        let desired_first_buffer_addr = (data_base_addr + original_body_offset + 63) & !63;
+        let body_offset = desired_first_buffer_addr - data_base_addr;
+        
+        debug_println!("Original body_offset: {}, Adjusted body_offset: {}, First buffer will be at: 0x{:x}", 
+                      original_body_offset, body_offset, desired_first_buffer_addr);
 
         let fb_msg: &fbm::Message =
             &flatbuffers::root::<fbm::Message>(meta_slice).map_err(|e| {
