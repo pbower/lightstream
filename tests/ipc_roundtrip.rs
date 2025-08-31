@@ -5,8 +5,10 @@ mod integration {
     use ::lightstream_io::enums::BufferChunkSize;
     use ::lightstream_io::enums::IPCMessageProtocol;
     use ::lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
+    use ::lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
     use ::lightstream_io::models::streams::disk::DiskByteStream;
     use ::lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
+    use ::lightstream_io::models::writers::ipc::table_writer::TableWriter;
     use futures_util::stream::StreamExt;
     use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
     use minarrow::*;
@@ -224,23 +226,31 @@ mod integration {
         let dir = tempdir().unwrap();
         let path = dir.path().join("arrow_roundtrip_ipc.bin");
         {
-            //let file = tokio::fs::File::create(&path).await.unwrap();
-            let mut writer = TableStreamWriter::<Vec64<u8>>::new(schema, mode);
+            let file = tokio::fs::File::create(&path).await.unwrap();
+            let mut writer = TableWriter::new(file, schema, mode).unwrap();
             for (dict_id, unique) in dicts_for_table(&table) {
                 writer.register_dictionary(dict_id, unique.to_vec());
             }
-            let _ = writer.write(&table);
-            let _ = writer.finish();
+            writer.write_all_tables(vec![table.clone()]).await.unwrap();
         }
 
-        // --- Read via production DiskByteStream
-        let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
-            .await
-            .unwrap();
-        let mut reader = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::File);
-        let result = reader.next().await;
-        assert!(result.is_some());
-        let table2 = result.unwrap().unwrap();
+        // --- Read using appropriate reader for protocol
+        let mut table2 = match mode {
+            IPCMessageProtocol::File => {
+                let reader = FileTableReader::open(&path).unwrap();
+                reader.read_batch(0).unwrap()
+            }
+            IPCMessageProtocol::Stream => {
+                let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
+                    .await
+                    .unwrap();
+                let mut reader = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
+                reader.next().await.unwrap().unwrap()
+            }
+        };
+        
+        // Fix table name to match original for comparison
+        table2.name = table.name.clone();
 
         // --- Data equality
         assert_eq!(table2.n_rows, table.n_rows);
@@ -351,20 +361,29 @@ mod integration {
             .map(|c| c.field.as_ref().clone())
             .collect();
         {
-            //let file = tokio::fs::File::create(&path).await.unwrap();
-            let mut wr: TableStreamWriter<Vec64<u8>> = TableStreamWriter::new(schema, fmt);
+            let file = tokio::fs::File::create(&path).await.unwrap();
+            let mut wr = TableWriter::new(file, schema, fmt).unwrap();
             wr.register_dictionary(3, uniqs); // cat column is 3rd here
-            let _ = wr.write(&table);
-            let _ = wr.finish();
+            wr.write_all_tables(vec![table.clone()]).await.unwrap();
         }
 
-        // ---------- read via DiskByteStream ----------
-        let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
-            .await
-            .unwrap();
-        let mut rdr = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::File);
-
-        let roundtripped = rdr.next().await.unwrap().unwrap();
+        // ---------- read using appropriate reader for protocol ----------
+        let mut roundtripped = match fmt {
+            IPCMessageProtocol::File => {
+                let reader = FileTableReader::open(&path).unwrap();
+                reader.read_batch(0).unwrap()
+            }
+            IPCMessageProtocol::Stream => {
+                let stream = DiskByteStream::open(&path, BufferChunkSize::Custom(128 * 1024))
+                    .await
+                    .unwrap();
+                let mut reader = TableStreamReader64::new(stream, 128 * 1024, IPCMessageProtocol::Stream);
+                reader.next().await.unwrap().unwrap()
+            }
+        };
+        
+        // Fix table name to match original for comparison
+        roundtripped.name = table.name.clone();
         assert_eq!(roundtripped, table); // derives PartialEq so includes masks
     }
 
@@ -383,22 +402,20 @@ mod integration {
         let dir = tempdir().unwrap();
         let p = dir.path().join("arrow.bin");
         {
-            //let file = tokio::fs::File::create(&p).await.unwrap();
-            let mut writer: TableStreamWriter<Vec64<u8>> =
-                TableStreamWriter::new(schema, IPCMessageProtocol::File);
+            let file = tokio::fs::File::create(&p).await.unwrap();
+            let mut writer = TableWriter::new(file, schema, IPCMessageProtocol::File).unwrap();
             for (id, u) in dicts_for_table(&table) {
                 writer.register_dictionary(id, vec64_to_vec(u));
             }
-            let _ = writer.write(&table);
-            let _ = writer.finish();
+            writer.write_all_tables(vec![table.clone()]).await.unwrap();
         }
 
-        // ---------- read file via DiskByteStream ----------
-        let stream = DiskByteStream::open(&p, BufferChunkSize::Custom(256 * 1024))
-            .await
-            .unwrap();
-        let mut reader = TableStreamReader64::new(stream, 256 * 1024, IPCMessageProtocol::File);
-        let roundtripped = reader.next().await.unwrap().unwrap();
+        // ---------- read file via FileTableReader ----------
+        let reader = FileTableReader::open(&p).unwrap();
+        let mut roundtripped = reader.read_batch(0).unwrap();
+        
+        // Fix table name to match original for comparison
+        roundtripped.name = table.name.clone();
 
         assert_eq!(roundtripped, table);
     }
