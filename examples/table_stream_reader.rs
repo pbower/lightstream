@@ -6,20 +6,23 @@
 //! - Handle different stream protocols (Stream vs File)
 //! - Process large datasets without loading everything into memory
 
-use lightstream_io::enums::IPCMessageProtocol;
-use lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
-use lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
-use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
-use lightstream_io::models::streams::disk::DiskByteStream;
+use futures_util::StreamExt;
 use lightstream_io::enums::BufferChunkSize;
+use lightstream_io::enums::IPCMessageProtocol;
+use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
+use lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
+use lightstream_io::models::streams::disk::DiskByteStream;
+use lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, StringArray};
+use minarrow::{
+    Array, Buffer, Field, FieldArray, IntegerArray, NumericArray, StringArray, Table, TextArray,
+    Vec64,
+};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
-use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,21 +59,21 @@ async fn stream_protocol_example(stream_path: &Path) -> Result<(), Box<dyn std::
     write_stream_data(&tables, stream_path, IPCMessageProtocol::Stream).await?;
 
     println!("  Reading Stream protocol data...");
-    
+
     // Read using TableStreamReader
     let disk_stream = DiskByteStream::open(stream_path, BufferChunkSize::Custom(8192)).await?;
     let mut reader = TableStreamReader64::new(disk_stream, 8192, IPCMessageProtocol::Stream);
-    
+
     let mut batch_count = 0;
     let mut total_rows = 0;
-    
+
     while let Some(result) = reader.next().await {
         let table = result?;
         batch_count += 1;
         total_rows += table.n_rows;
-        
+
         println!("    Batch {}: {} rows", batch_count, table.n_rows);
-        
+
         // Show sample data
         if let Array::NumericArray(NumericArray::Int32(int_arr)) = &table.cols[0].array {
             if table.n_rows > 0 {
@@ -78,8 +81,11 @@ async fn stream_protocol_example(stream_path: &Path) -> Result<(), Box<dyn std::
             }
         }
     }
-    
-    println!("  ✓ Read {} batches, {} total rows", batch_count, total_rows);
+
+    println!(
+        "  ✓ Read {} batches, {} total rows",
+        batch_count, total_rows
+    );
     Ok(())
 }
 
@@ -90,13 +96,13 @@ async fn file_protocol_example(file_path: &Path) -> Result<(), Box<dyn std::erro
     write_stream_data(&tables, file_path, IPCMessageProtocol::File).await?;
 
     println!("  Reading File protocol data...");
-    
+
     // Read using FileTableReader for File protocol (more appropriate)
     let reader = FileTableReader::open(file_path)?;
-    
+
     let mut batch_count = 0;
     let mut total_rows = 0;
-    
+
     // Read all batches from the file
     let mut batch_index = 0;
     loop {
@@ -110,8 +116,11 @@ async fn file_protocol_example(file_path: &Path) -> Result<(), Box<dyn std::erro
             Err(_) => break, // No more batches
         }
     }
-    
-    println!("  ✓ Read {} batches, {} total rows", batch_count, total_rows);
+
+    println!(
+        "  ✓ Read {} batches, {} total rows",
+        batch_count, total_rows
+    );
     Ok(())
 }
 
@@ -120,27 +129,30 @@ async fn large_dataset_example(large_path: &Path) -> Result<(), Box<dyn std::err
     // Create larger dataset
     let large_tables = create_large_sample_tables(10);
     let total_expected_rows: usize = large_tables.iter().map(|t| t.n_rows).sum();
-    
+
     write_stream_data(&large_tables, large_path, IPCMessageProtocol::Stream).await?;
-    
-    println!("  Processing large dataset ({} total expected rows)...", total_expected_rows);
-    
+
+    println!(
+        "  Processing large dataset ({} total expected rows)...",
+        total_expected_rows
+    );
+
     // Use smaller chunk size to demonstrate streaming
     let disk_stream = DiskByteStream::open(large_path, BufferChunkSize::Custom(4096)).await?;
     let mut reader = TableStreamReader64::new(disk_stream, 4096, IPCMessageProtocol::Stream);
-    
+
     let mut batch_count = 0;
     let mut total_rows = 0;
     let mut sum_of_values = 0.0;
-    
+
     let start_time = std::time::Instant::now();
-    
+
     // Process each batch as it arrives (streaming fashion)
     while let Some(result) = reader.next().await {
         let table = result?;
         batch_count += 1;
         total_rows += table.n_rows;
-        
+
         // Perform some computation on each batch without storing it
         // Since we now use the same schema, col[1] is a string, so let's compute on the integer column
         if let Array::NumericArray(NumericArray::Int32(int_arr)) = &table.cols[0].array {
@@ -148,30 +160,33 @@ async fn large_dataset_example(large_path: &Path) -> Result<(), Box<dyn std::err
                 sum_of_values += value as f64; // Convert to f64 for the sum
             }
         }
-        
+
         // Progress indicator
         if batch_count % 5 == 0 {
             println!("    Processed {} batches so far...", batch_count);
         }
     }
-    
+
     let duration = start_time.elapsed();
-    
-    println!("  ✓ Processed {} batches, {} total rows in {:?}", batch_count, total_rows, duration);
+
+    println!(
+        "  ✓ Processed {} batches, {} total rows in {:?}",
+        batch_count, total_rows, duration
+    );
     println!("    Sum of sequence IDs: {:.0}", sum_of_values);
     println!("    Memory-efficient: each batch processed and discarded");
-    
+
     Ok(())
 }
 
 /// Create small sample tables for testing
 fn create_small_sample_tables(num_tables: usize) -> Vec<Table> {
     let mut tables = Vec::new();
-    
+
     for i in 0..num_tables {
         let n_rows = 100;
         let start_val = i * 100;
-        
+
         // Integer column
         let int_data: Vec<i32> = (start_val..start_val + n_rows).map(|x| x as i32).collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
@@ -220,18 +235,18 @@ fn create_small_sample_tables(num_tables: usize) -> Vec<Table> {
             cols: vec![int_field, str_field],
         });
     }
-    
+
     tables
 }
 
 /// Create larger sample tables for performance testing (same schema as small tables)
 fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
     let mut tables = Vec::new();
-    
+
     for i in 0..num_tables {
         let n_rows = 5000; // Larger batches
         let start_val = i * 5000;
-        
+
         // Integer column (same name as small tables)
         let int_data: Vec<i32> = (start_val..start_val + n_rows).map(|x| x as i32).collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
@@ -280,7 +295,7 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
             cols: vec![int_field, str_field], // Same schema as small tables
         });
     }
-    
+
     tables
 }
 
@@ -290,15 +305,19 @@ async fn write_stream_data(
     output_path: &Path,
     protocol: IPCMessageProtocol,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let schema: Vec<Field> = tables[0].cols.iter().map(|col| (*col.field).clone()).collect();
+    let schema: Vec<Field> = tables[0]
+        .cols
+        .iter()
+        .map(|col| (*col.field).clone())
+        .collect();
     let mut stream_writer = TableStreamWriter::<Vec64<u8>>::new(schema, protocol);
-    
+
     // Write all tables
     for table in tables {
         stream_writer.write(table)?;
     }
     stream_writer.finish()?;
-    
+
     // Write to file
     let mut file = File::create(output_path).await?;
     while let Some(frame_result) = stream_writer.next_frame() {
@@ -306,6 +325,6 @@ async fn write_stream_data(
         file.write_all(frame.as_ref()).await?;
     }
     file.flush().await?;
-    
+
     Ok(())
 }

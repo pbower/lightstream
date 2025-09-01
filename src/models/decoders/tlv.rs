@@ -1,11 +1,10 @@
 use std::convert::TryInto;
 use std::io;
 
+use crate::enums::DecodeResult;
 use crate::models::frames::tlv_frame::TLVDecodedFrame;
 use crate::traits::frame_decoder::FrameDecoder;
-use crate::enums::DecodeResult;
 use crate::traits::stream_buffer::StreamBuffer;
-
 
 /// Decoder for Type-Length-Value (TLV) frames.
 ///

@@ -1,5 +1,6 @@
-//! Generic frame decoding infrastructure.
+//! # Frame Decoder - **Generic frame decoding infrastructure**.
 //!
+//! ## Purpose
 //! For implementing minimally-allocating, incremental frame decoders over arbitrary byte streams.
 //!
 //!  In this context, a frame refers to a self-contained unit of data extracted from a byte stream, where:
@@ -10,7 +11,7 @@
 //! and reporting when a full logical frame has been received. It does not allocate or retain data;
 //! it only inspects the passed-in buffer and returns how many bytes should be consumed.
 //
-//  Usage:
+//  # Usage:
 //  - Call `decode(&mut self, &[u8])` repeatedly as more bytes arrive.
 //  - On `Frame { ... }`, consume the reported number of bytes and process the returned frame.
 //  - On `NeedMore`, retain all bytes in the buffer and supply more data.
@@ -30,7 +31,7 @@ use std::io;
 ///
 /// ### Safety Contract
 /// - The decoder musn't mutate or take ownership of the input buffer.
-/// - It musn't remove bytes itself—return `consumed`, the caller will drop them.
+/// - It must not remove bytes itself—return `consumed`, the caller will drop them.
 /// - It should always leave the buffer unchanged if returning `NeedMore`.
 pub trait FrameDecoder {
     /// The type of frame yielded by this decoder.

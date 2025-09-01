@@ -29,12 +29,12 @@ impl FrameEncoder for TLVEncoder {
         *global_offset += 5; // type (1) + length (4)
         out.extend_from_slice(frame.value);
         *global_offset += frame.value.len();
-        
-        // Note: TLV padding is intentionally not implemented here as TLV is meant to be 
-        // a simple wire format. Alignment padding would be more appropriate at a higher 
+
+        // Note: TLV padding is intentionally not implemented here as TLV is meant to be
+        // a simple wire format. Alignment padding would be more appropriate at a higher
         // level protocol layer if needed for specific use cases (e.g., when embedding
         // TLV frames within Arrow IPC contexts).
-        
+
         Ok((out, ()))
     }
 }

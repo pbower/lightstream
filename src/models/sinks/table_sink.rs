@@ -1,3 +1,4 @@
+use crate::compression::Compression;
 use crate::enums::IPCMessageProtocol;
 use crate::models::encoders::ipc::table_stream::GTableStreamEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
@@ -58,6 +59,19 @@ where
     pub fn new(sink: W, schema: Vec<Field>, protocol: IPCMessageProtocol) -> io::Result<Self> {
         Ok(Self {
             inner: GTableStreamEncoder::new(schema.clone(), protocol),
+            schema,
+            destination: sink,
+            protocol,
+            schema_written: false,
+            finished: false,
+            frame_buf: None,
+            frame_pos: 0,
+        })
+    }
+
+    pub fn with_compression(sink: W, schema: Vec<Field>, protocol: IPCMessageProtocol, compression: Compression) -> io::Result<Self> {
+        Ok(Self {
+            inner: GTableStreamEncoder::with_compression(schema.clone(), protocol, compression),
             schema,
             destination: sink,
             protocol,

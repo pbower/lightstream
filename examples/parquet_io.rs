@@ -11,25 +11,27 @@
 use lightstream_io::{
     compression::Compression,
     models::{
-        readers::parquet_reader::read_parquet_table,
-        writers::parquet_writer::write_parquet_table,
+        readers::parquet_reader::read_parquet_table, writers::parquet_writer::write_parquet_table,
     },
 };
 
 #[cfg(feature = "parquet")]
 use minarrow::ffi::arrow_dtype::ArrowType;
 #[cfg(feature = "parquet")]
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray, BooleanArray, Bitmask};
+use minarrow::{
+    Array, Bitmask, BooleanArray, Buffer, Field, FieldArray, FloatArray, IntegerArray,
+    NumericArray, StringArray, Table, TextArray, Vec64,
+};
+#[cfg(feature = "parquet")]
+use std::fs::File;
+#[cfg(feature = "parquet")]
+use std::io::{Cursor, Seek, SeekFrom};
 #[cfg(feature = "parquet")]
 use std::path::Path;
 #[cfg(feature = "parquet")]
 use std::sync::Arc;
 #[cfg(feature = "parquet")]
-use std::io::{Cursor, Seek, SeekFrom};
-#[cfg(feature = "parquet")]
 use tempfile::tempdir;
-#[cfg(feature = "parquet")]
-use std::fs::File;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,7 +81,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn basic_parquet_example(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Create a simple table
     let table = create_simple_table();
-    println!("  Created table '{}' with {} rows", table.name, table.n_rows);
+    println!(
+        "  Created table '{}' with {} rows",
+        table.name, table.n_rows
+    );
 
     // Write to Parquet file
     let start = std::time::Instant::now();
@@ -88,10 +93,14 @@ async fn basic_parquet_example(file_path: &Path) -> Result<(), Box<dyn std::erro
         write_parquet_table(&table, &mut file, Compression::None)?;
     }
     let write_time = start.elapsed();
-    
+
     let file_size = std::fs::metadata(file_path)?.len();
     println!("  Wrote to Parquet in {:?}", write_time);
-    println!("  File size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
+    println!(
+        "  File size: {} bytes ({:.2} KB)",
+        file_size,
+        file_size as f64 / 1024.0
+    );
 
     // Read back from Parquet file
     let start = std::time::Instant::now();
@@ -100,9 +109,12 @@ async fn basic_parquet_example(file_path: &Path) -> Result<(), Box<dyn std::erro
         read_parquet_table(&mut file)?
     };
     let read_time = start.elapsed();
-    
+
     println!("  Read from Parquet in {:?}", read_time);
-    println!("  Read table '{}' with {} rows", read_table.name, read_table.n_rows);
+    println!(
+        "  Read table '{}' with {} rows",
+        read_table.name, read_table.n_rows
+    );
 
     // Verify data integrity
     verify_simple_table(&table, &read_table)?;
@@ -115,7 +127,10 @@ async fn basic_parquet_example(file_path: &Path) -> Result<(), Box<dyn std::erro
 /// Compression comparison example
 async fn compression_example(compression_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let table = create_large_string_table();
-    println!("  Created table with {} rows for compression testing", table.n_rows);
+    println!(
+        "  Created table with {} rows for compression testing",
+        table.n_rows
+    );
 
     let compressions = vec![
         ("none", Compression::None),
@@ -129,7 +144,7 @@ async fn compression_example(compression_dir: &Path) -> Result<(), Box<dyn std::
 
     for (name, compression) in compressions {
         let file_path = compression_dir.join(format!("data_{}.parquet", name));
-        
+
         // Write with compression
         let start = std::time::Instant::now();
         {
@@ -137,9 +152,9 @@ async fn compression_example(compression_dir: &Path) -> Result<(), Box<dyn std::
             write_parquet_table(&table, &mut file, compression)?;
         }
         let write_time = start.elapsed();
-        
+
         let file_size = std::fs::metadata(&file_path)?.len();
-        
+
         // Read back and verify
         let start = std::time::Instant::now();
         let read_table = {
@@ -147,10 +162,12 @@ async fn compression_example(compression_dir: &Path) -> Result<(), Box<dyn std::
             read_parquet_table(&mut file)?
         };
         let read_time = start.elapsed();
-        
-        println!("    {}: {} bytes, write {:?}, read {:?}", 
-                 name, file_size, write_time, read_time);
-        
+
+        println!(
+            "    {}: {} bytes, write {:?}, read {:?}",
+            name, file_size, write_time, read_time
+        );
+
         // Verify data integrity
         assert_eq!(table.n_rows, read_table.n_rows);
         assert_eq!(table.cols.len(), read_table.cols.len());
@@ -164,19 +181,33 @@ async fn compression_example(compression_dir: &Path) -> Result<(), Box<dyn std::
 /// Complex data types example
 async fn complex_types_example(_file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let table = create_complex_types_table();
-    println!("  Created table with complex data types ({} rows)", table.n_rows);
-    
+    println!(
+        "  Created table with complex data types ({} rows)",
+        table.n_rows
+    );
+
     // Print schema
     for (i, col) in table.cols.iter().enumerate() {
-        println!("    Column {}: {} ({:?})", i, col.field.name, col.field.dtype);
+        println!(
+            "    Column {}: {} ({:?})",
+            i, col.field.name, col.field.dtype
+        );
     }
 
     // Round-trip test
     let read_table = roundtrip_parquet(&table, Compression::None)?;
-    
+
     println!("  ✓ Complex types round-trip successful");
-    println!("    Original: {} rows, {} columns", table.n_rows, table.cols.len());
-    println!("    Read back: {} rows, {} columns", read_table.n_rows, read_table.cols.len());
+    println!(
+        "    Original: {} rows, {} columns",
+        table.n_rows,
+        table.cols.len()
+    );
+    println!(
+        "    Read back: {} rows, {} columns",
+        read_table.n_rows,
+        read_table.cols.len()
+    );
 
     // Verify some sample data
     if let Array::TextArray(TextArray::String32(str_arr)) = &read_table.cols[2].array {
@@ -200,11 +231,17 @@ async fn large_dataset_example(file_path: &Path) -> Result<(), Box<dyn std::erro
     // Write with best compression for large files
     let compression = {
         #[cfg(feature = "zstd")]
-        { Compression::Zstd }
+        {
+            Compression::Zstd
+        }
         #[cfg(all(feature = "snappy", not(feature = "zstd")))]
-        { Compression::Snappy }
+        {
+            Compression::Snappy
+        }
         #[cfg(all(not(feature = "zstd"), not(feature = "snappy")))]
-        { Compression::None }
+        {
+            Compression::None
+        }
     };
 
     let start = std::time::Instant::now();
@@ -213,10 +250,16 @@ async fn large_dataset_example(file_path: &Path) -> Result<(), Box<dyn std::erro
         write_parquet_table(&table, &mut file, compression)?;
     }
     let write_time = start.elapsed();
-    
+
     let file_size = std::fs::metadata(file_path)?.len();
-    println!("  Write performance: {} rows in {:?}", table.n_rows, write_time);
-    println!("  File size: {:.2} MB", file_size as f64 / (1024.0 * 1024.0));
+    println!(
+        "  Write performance: {} rows in {:?}",
+        table.n_rows, write_time
+    );
+    println!(
+        "  File size: {:.2} MB",
+        file_size as f64 / (1024.0 * 1024.0)
+    );
 
     // Read back and measure performance
     let start = std::time::Instant::now();
@@ -225,9 +268,15 @@ async fn large_dataset_example(file_path: &Path) -> Result<(), Box<dyn std::erro
         read_parquet_table(&mut file)?
     };
     let read_time = start.elapsed();
-    
-    println!("  Read performance: {} rows in {:?}", read_table.n_rows, read_time);
-    println!("  Throughput: {:.0} rows/sec (read)", read_table.n_rows as f64 / read_time.as_secs_f64());
+
+    println!(
+        "  Read performance: {} rows in {:?}",
+        read_table.n_rows, read_time
+    );
+    println!(
+        "  Throughput: {:.0} rows/sec (read)",
+        read_table.n_rows as f64 / read_time.as_secs_f64()
+    );
 
     // Verify row count
     assert_eq!(table.n_rows, read_table.n_rows);
@@ -240,7 +289,7 @@ async fn large_dataset_example(file_path: &Path) -> Result<(), Box<dyn std::erro
 /// Create a simple table for basic testing
 fn create_simple_table() -> Table {
     let n_rows = 1000;
-    
+
     // Integer column
     let int_data: Vec<i32> = (0..n_rows).map(|i| i as i32).collect();
     let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
@@ -284,16 +333,14 @@ fn create_simple_table() -> Table {
 /// Create a table with lots of string data for compression testing
 fn create_large_string_table() -> Table {
     let n_rows = 5000;
-    
+
     // Create repetitive string data that compresses well
     let individual_strings: Vec<String> = (0..n_rows)
-        .map(|i| {
-            match i % 10 {
-                0..=2 => "Common string pattern that appears frequently in the data".to_string(),
-                3..=5 => format!("Variable content item number {}", i % 100),
-                6..=8 => "Another repeated pattern for compression testing".to_string(),
-                _ => format!("Unique entry {}", i),
-            }
+        .map(|i| match i % 10 {
+            0..=2 => "Common string pattern that appears frequently in the data".to_string(),
+            3..=5 => format!("Variable content item number {}", i % 100),
+            6..=8 => "Another repeated pattern for compression testing".to_string(),
+            _ => format!("Unique entry {}", i),
         })
         .collect();
 
@@ -330,7 +377,7 @@ fn create_large_string_table() -> Table {
 /// Create a table with various complex data types
 fn create_complex_types_table() -> Table {
     let n_rows = 500;
-    
+
     // Integer column
     let int_data: Vec<i64> = (0..n_rows).map(|i| i as i64 * 7 + 42).collect();
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
@@ -365,14 +412,13 @@ fn create_complex_types_table() -> Table {
 
     // String column with varied lengths
     let individual_strings: Vec<String> = (0..n_rows)
-        .map(|i| {
-            match i % 5 {
-                0 => "A".to_string(),
-                1 => "Short".to_string(),
-                2 => "Medium length string".to_string(),
-                3 => "This is a considerably longer string for testing variable-length encoding".to_string(),
-                _ => format!("Generated string number {} with some content", i),
-            }
+        .map(|i| match i % 5 {
+            0 => "A".to_string(),
+            1 => "Short".to_string(),
+            2 => "Medium length string".to_string(),
+            3 => "This is a considerably longer string for testing variable-length encoding"
+                .to_string(),
+            _ => format!("Generated string number {} with some content", i),
         })
         .collect();
 
@@ -436,7 +482,7 @@ fn create_complex_types_table() -> Table {
 /// Create a large table for performance testing
 fn create_large_performance_table() -> Table {
     let n_rows = 50_000;
-    
+
     // Simple integer sequence
     let int_data: Vec<i32> = (0..n_rows).map(|i| i as i32).collect();
     let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
@@ -480,24 +526,49 @@ fn create_large_performance_table() -> Table {
 
 #[cfg(feature = "parquet")]
 /// Verify that two simple tables have the same data
-fn verify_simple_table(original: &Table, read_back: &Table) -> Result<(), Box<dyn std::error::Error>> {
+fn verify_simple_table(
+    original: &Table,
+    read_back: &Table,
+) -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(original.n_rows, read_back.n_rows, "Row count mismatch");
-    assert_eq!(original.cols.len(), read_back.cols.len(), "Column count mismatch");
+    assert_eq!(
+        original.cols.len(),
+        read_back.cols.len(),
+        "Column count mismatch"
+    );
 
     // Check integer column
-    if let (Array::NumericArray(NumericArray::Int32(orig_int)), 
-            Array::NumericArray(NumericArray::Int32(read_int))) = 
-           (&original.cols[0].array, &read_back.cols[0].array) {
-        assert_eq!(orig_int.data.as_ref(), read_int.data.as_ref(), "Integer data mismatch");
+    if let (
+        Array::NumericArray(NumericArray::Int32(orig_int)),
+        Array::NumericArray(NumericArray::Int32(read_int)),
+    ) = (&original.cols[0].array, &read_back.cols[0].array)
+    {
+        assert_eq!(
+            orig_int.data.as_ref(),
+            read_int.data.as_ref(),
+            "Integer data mismatch"
+        );
     }
 
     // Check float column
-    if let (Array::NumericArray(NumericArray::Float64(orig_float)), 
-            Array::NumericArray(NumericArray::Float64(read_float))) = 
-           (&original.cols[1].array, &read_back.cols[1].array) {
+    if let (
+        Array::NumericArray(NumericArray::Float64(orig_float)),
+        Array::NumericArray(NumericArray::Float64(read_float)),
+    ) = (&original.cols[1].array, &read_back.cols[1].array)
+    {
         // Allow for small floating point differences
-        for (orig, read) in orig_float.data.as_ref().iter().zip(read_float.data.as_ref().iter()) {
-            assert!((orig - read).abs() < 1e-10, "Float data mismatch: {} vs {}", orig, read);
+        for (orig, read) in orig_float
+            .data
+            .as_ref()
+            .iter()
+            .zip(read_float.data.as_ref().iter())
+        {
+            assert!(
+                (orig - read).abs() < 1e-10,
+                "Float data mismatch: {} vs {}",
+                orig,
+                read
+            );
         }
     }
 
@@ -506,7 +577,10 @@ fn verify_simple_table(original: &Table, read_back: &Table) -> Result<(), Box<dy
 
 #[cfg(feature = "parquet")]
 /// Round-trip a table through Parquet format
-fn roundtrip_parquet(table: &Table, compression: Compression) -> Result<Table, Box<dyn std::error::Error>> {
+fn roundtrip_parquet(
+    table: &Table,
+    compression: Compression,
+) -> Result<Table, Box<dyn std::error::Error>> {
     let mut buf = Cursor::new(Vec::new());
     write_parquet_table(table, &mut buf, compression)?;
     buf.seek(SeekFrom::Start(0))?;

@@ -1,15 +1,28 @@
+//! # Test Helpers - *Column and Table Generators*
+//!
+//! Constructors for default `minarrow` columns/tables plus in-memory/file
+//! writers used in integration tests. Each function returns deterministic,
+//! 4-row fixtures spanning the supported logical types.
+//!
+//! Feature flags gate optional types:
+//! - `datetime` – date/datetime arrays
+//! - `large_string` – 64-bit offset strings
+//! - `extended_categorical` – 8/16/64-bit categorical indices
+//! - `extended_numeric_types` – 8/16-bit integer families
+
 use std::sync::Arc;
 
 use minarrow::{
-    Array, ArrowType, Bitmask, Buffer, CategoricalArray, Field, FieldArray, FloatArray,
-    IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64,
+    ffi::arrow_dtype::CategoricalIndexType, Array, ArrowType, Bitmask, Buffer, CategoricalArray,
+    Field, FieldArray, FloatArray, IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64,
 };
-use minarrow::{BooleanArray, ffi::arrow_dtype::CategoricalIndexType};
+use minarrow::BooleanArray;
 use tempfile::NamedTempFile;
-#[cfg(feature = "datetime")]
-use {DatetimeArray, TemporalArray, TimeUnit};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
+#[cfg(feature = "datetime")]
+use minarrow::{DatetimeArray, TemporalArray, TimeUnit};
+
+use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
 
 use crate::{
     enums::IPCMessageProtocol,
@@ -20,6 +33,7 @@ use crate::{
 
 // -------------------- Column Generators -------------------- //
 
+/// Build a non-nullable `Int32` column: `[1, 2, 3, 4]`.
 pub(crate) fn int32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -35,6 +49,7 @@ pub(crate) fn int32_col() -> FieldArray {
     )
 }
 
+/// Build a non-nullable `Int64` column: `[11, 12, 13, 14]`.
 pub(crate) fn int64_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -50,6 +65,7 @@ pub(crate) fn int64_col() -> FieldArray {
     )
 }
 
+/// Build a non-nullable `UInt32` column: `[21, 22, 23, 24]`.
 pub(crate) fn uint32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -65,6 +81,7 @@ pub(crate) fn uint32_col() -> FieldArray {
     )
 }
 
+/// Build a non-nullable `UInt64` column: `[31, 32, 33, 34]`.
 pub(crate) fn uint64_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -80,6 +97,7 @@ pub(crate) fn uint64_col() -> FieldArray {
     )
 }
 
+/// Build a non-nullable `Float32` column: `[0.1, 0.2, 0.3, 0.4]`.
 pub(crate) fn float32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -95,6 +113,7 @@ pub(crate) fn float32_col() -> FieldArray {
     )
 }
 
+/// Build a non-nullable `Float64` column: `[1.1, 2.2, 3.3, 4.4]`.
 pub(crate) fn float64_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -110,6 +129,7 @@ pub(crate) fn float64_col() -> FieldArray {
     )
 }
 
+/// Build a nullable `Boolean` column with bitmask and all-valid null mask.
 pub(crate) fn bool_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -119,7 +139,7 @@ pub(crate) fn bool_col() -> FieldArray {
             metadata: Default::default(),
         },
         Array::BooleanArray(Arc::new(BooleanArray {
-            data: Bitmask::from_bytes(&[0b00001101], 4),
+            data: Bitmask::from_bytes(&[0b0000_1101], 4),
             null_mask: Some(Bitmask::new_set_all(4, true)),
             len: 4,
             _phantom: std::marker::PhantomData,
@@ -127,6 +147,7 @@ pub(crate) fn bool_col() -> FieldArray {
     )
 }
 
+/// Build a nullable `String32` column with offsets `[0, 4, 9, 11, 12]` over `"helloworldxx"`.
 pub(crate) fn string32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -143,6 +164,7 @@ pub(crate) fn string32_col() -> FieldArray {
     )
 }
 
+/// Build a nullable `Dictionary32` column with values `[1,0,2,1]` and uniques `["apple","banana","pear"]`.
 pub(crate) fn dict32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -164,6 +186,7 @@ pub(crate) fn dict32_col() -> FieldArray {
 }
 
 #[cfg(feature = "datetime")]
+/// Build a non-nullable `Date32` column - unit is days
 pub(crate) fn dt32_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -181,6 +204,7 @@ pub(crate) fn dt32_col() -> FieldArray {
 }
 
 #[cfg(feature = "datetime")]
+/// Build a non-nullable `Date64` column - unit is days
 pub(crate) fn dt64_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -190,7 +214,7 @@ pub(crate) fn dt64_col() -> FieldArray {
             metadata: Default::default(),
         },
         Array::TemporalArray(TemporalArray::Datetime64(Arc::new(DatetimeArray {
-            data: Buffer::from(Vec64::from_slice(&[1111111, 2222222, 3333333, 4444444])),
+            data: Buffer::from(Vec64::from_slice(&[1_111_111, 2_222_222, 3_333_333, 4_444_444])),
             null_mask: None,
             time_unit: TimeUnit::Days,
         }))),
@@ -198,6 +222,7 @@ pub(crate) fn dt64_col() -> FieldArray {
 }
 
 #[cfg(feature = "large_string")]
+/// Build a nullable `LargeString` column with 64-bit offsets.
 pub(crate) fn string64_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -215,8 +240,9 @@ pub(crate) fn string64_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_categorical")]
+/// Build a nullable `Dictionary8` column with small categorical index.
 pub(crate) fn dict8_col() -> FieldArray {
-    use ffi::arrow_dtype::CategoricalIndexType::*;
+    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict8".into(),
@@ -233,8 +259,9 @@ pub(crate) fn dict8_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_categorical")]
+/// Build a nullable `Dictionary16` column with medium categorical index.
 pub(crate) fn dict16_col() -> FieldArray {
-    use ffi::arrow_dtype::CategoricalIndexType::*;
+    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict16".into(),
@@ -251,8 +278,9 @@ pub(crate) fn dict16_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_categorical")]
+/// Build a nullable `Dictionary64` column with large categorical index.
 pub(crate) fn dict64_col() -> FieldArray {
-    use ffi::arrow_dtype::CategoricalIndexType::*;
+    use minarrow::ffi::arrow_dtype::CategoricalIndexType::*;
     FieldArray::new(
         Field {
             name: "dict64".into(),
@@ -269,6 +297,7 @@ pub(crate) fn dict64_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_numeric_types")]
+/// Build a non-nullable `Int8` column.
 pub(crate) fn int8_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -285,6 +314,7 @@ pub(crate) fn int8_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_numeric_types")]
+/// Build a non-nullable `Int16` column.
 pub(crate) fn int16_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -301,6 +331,7 @@ pub(crate) fn int16_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_numeric_types")]
+/// Build a non-nullable `UInt8` column.
 pub(crate) fn uint8_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -317,6 +348,7 @@ pub(crate) fn uint8_col() -> FieldArray {
 }
 
 #[cfg(feature = "extended_numeric_types")]
+/// Build a non-nullable `UInt16` column.
 pub(crate) fn uint16_col() -> FieldArray {
     FieldArray::new(
         Field {
@@ -334,6 +366,11 @@ pub(crate) fn uint16_col() -> FieldArray {
 
 // -------------------- Table Generator -------------------- //
 
+/// Construct a 4-row `Table` covering all available types under the current feature set.
+///
+/// Always includes base numeric, boolean, string32, and dictionary32 columns.
+/// feature-flag conditionally includes `datetime`, `large_string`, `extended_categorical`,
+/// and `extended_numeric_types` columns.
 pub(crate) fn make_all_types_table() -> Table {
     #[allow(unused_mut)]
     let mut cols = vec![
@@ -374,6 +411,7 @@ pub(crate) fn make_all_types_table() -> Table {
     }
 }
 
+/// Extract a schema (fields) from `make_all_types_table()`.
 pub(crate) fn make_schema_all_types() -> Vec<Field> {
     make_all_types_table()
         .cols
@@ -384,6 +422,9 @@ pub(crate) fn make_schema_all_types() -> Vec<Field> {
 
 // -------------------- File Writers -------------------- //
 
+/// Write the provided tables to a temporary Arrow IPC *file* and return the handle.
+///
+/// Errors on file creation or write are bubbled via panics in tests for clarity.
 pub(crate) async fn write_test_table_to_file(tables: &[Table]) -> NamedTempFile {
     let temp = NamedTempFile::new().expect("Failed to create NamedTempFile");
     let path = temp.path().to_str().unwrap();
@@ -395,11 +436,12 @@ pub(crate) async fn write_test_table_to_file(tables: &[Table]) -> NamedTempFile 
     temp
 }
 
-/// Write tables to an in-memory async stream, then collect and chunk the result.
-/// - tables: borrowed slice, not moved or cloned
-/// - schema: borrowed slice
-/// - protocol: file/stream
-/// - chunk_size: number of bytes per simulated stream chunk
+/// Write tables to an in-memory Arrow IPC *stream* and return chunked payloads.
+///
+/// - `tables`: borrowed slice, not moved or cloned.
+/// - `schema`: borrowed slice (field definitions).
+/// - `protocol`: stream vs file framing.
+/// - `chunk_size`: number of bytes per simulated stream chunk.
 #[allow(dead_code)]
 pub async fn write_test_table_to_ipc_stream(
     tables: &[Table],
@@ -412,7 +454,7 @@ pub async fn write_test_table_to_ipc_stream(
     write_tables_to_stream::<_, Vec64<u8>>(&mut tx, tables, schema.to_vec(), protocol).await?;
     tx.shutdown().await.ok();
 
-    // Read all bytes from the reader end
+    // Read all bytes from the reader end.
     let mut all_bytes = Vec::new();
     let mut buf = vec![0u8; 8192];
     loop {
@@ -423,7 +465,7 @@ pub async fn write_test_table_to_ipc_stream(
         all_bytes.extend_from_slice(&buf[..n]);
     }
 
-    // Split into Vec<Vec<u8>> chunks for streaming
+    // Split into Vec<Vec<u8>> chunks for streaming.
     let mut chunks = Vec::new();
     let mut idx = 0;
     while idx < all_bytes.len() {

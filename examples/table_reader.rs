@@ -3,17 +3,20 @@
 //! This example demonstrates how to:
 //! - Use the generic TableReader for various data sources
 //! - Read all tables vs limited number of tables
-//! - Combine tables into SuperTable (preserving batches) 
+//! - Combine tables into SuperTable (preserving batches)
 //! - Combine tables into single Table (concatenated rows)
 //! - Handle different stream sources (disk, network, etc.)
 
+use lightstream_io::enums::BufferChunkSize;
 use lightstream_io::enums::IPCMessageProtocol;
-use lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
 use lightstream_io::models::readers::ipc::table_reader::TableReader;
 use lightstream_io::models::streams::disk::DiskByteStream;
-use lightstream_io::enums::BufferChunkSize;
+use lightstream_io::models::writers::ipc::table_stream_writer::TableStreamWriter;
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray};
+use minarrow::{
+    Array, Buffer, Field, FieldArray, FloatArray, IntegerArray, NumericArray, StringArray, Table,
+    TextArray, Vec64,
+};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -58,37 +61,42 @@ async fn read_all_tables_example(file_path: &Path) -> Result<(), Box<dyn std::er
     // Create test data
     let source_tables = create_test_tables(5);
     write_test_stream(&source_tables, file_path).await?;
-    
+
     println!("  Created stream with {} tables", source_tables.len());
 
     // Read all tables using TableReader
     let disk_stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(8192)).await?;
     let reader = TableReader::new(disk_stream, 8192, IPCMessageProtocol::Stream);
-    
+
     let start = std::time::Instant::now();
     let tables = reader.read_all_tables().await?;
     let duration = start.elapsed();
-    
+
     println!("  Read {} tables in {:?}", tables.len(), duration);
-    
+
     // Verify data integrity
     let total_rows: usize = tables.iter().map(|t| t.n_rows).sum();
     let expected_rows: usize = source_tables.iter().map(|t| t.n_rows).sum();
-    
+
     println!("  Total rows: {} (expected: {})", total_rows, expected_rows);
     assert_eq!(total_rows, expected_rows);
-    
+
     // Show sample from each table
     for (i, table) in tables.iter().enumerate() {
-        println!("    Table {}: '{}' with {} rows", i + 1, table.name, table.n_rows);
-        
+        println!(
+            "    Table {}: '{}' with {} rows",
+            i + 1,
+            table.name,
+            table.n_rows
+        );
+
         if let Array::NumericArray(NumericArray::Int32(int_arr)) = &table.cols[0].array {
             if table.n_rows > 0 {
                 println!("      First ID: {}", int_arr.data.as_ref()[0]);
             }
         }
     }
-    
+
     println!("  ✓ Successfully read all tables");
     Ok(())
 }
@@ -98,26 +106,35 @@ async fn read_limited_tables_example(file_path: &Path) -> Result<(), Box<dyn std
     // Create larger dataset
     let source_tables = create_test_tables(10);
     write_test_stream(&source_tables, file_path).await?;
-    
+
     println!("  Created stream with {} tables", source_tables.len());
 
     // Read only first 3 tables
     let disk_stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(8192)).await?;
     let reader = TableReader::new(disk_stream, 8192, IPCMessageProtocol::Stream);
-    
+
     let start = std::time::Instant::now();
     let tables = reader.read_tables(Some(3)).await?;
     let duration = start.elapsed();
-    
-    println!("  Read {} tables (limited to 3) in {:?}", tables.len(), duration);
+
+    println!(
+        "  Read {} tables (limited to 3) in {:?}",
+        tables.len(),
+        duration
+    );
     assert_eq!(tables.len(), 3, "Should have read exactly 3 tables");
-    
+
     // Verify we got the first 3 tables
     for (i, table) in tables.iter().enumerate() {
-        println!("    Table {}: '{}' with {} rows", i + 1, table.name, table.n_rows);
+        println!(
+            "    Table {}: '{}' with {} rows",
+            i + 1,
+            table.name,
+            table.n_rows
+        );
         assert_eq!(table.name, format!("test_batch_{}", i));
     }
-    
+
     println!("  ✓ Successfully read limited number of tables");
     Ok(())
 }
@@ -127,32 +144,40 @@ async fn super_table_example(file_path: &Path) -> Result<(), Box<dyn std::error:
     // Create test data with varying sizes
     let source_tables = create_varying_size_tables();
     write_test_stream(&source_tables, file_path).await?;
-    
-    println!("  Created stream with {} tables of varying sizes", source_tables.len());
+
+    println!(
+        "  Created stream with {} tables of varying sizes",
+        source_tables.len()
+    );
 
     // Read into SuperTable
     let disk_stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(8192)).await?;
     let reader = TableReader::new(disk_stream, 8192, IPCMessageProtocol::Stream);
-    
+
     let start = std::time::Instant::now();
-    let super_table = reader.read_to_super_table(Some("CombinedData".to_string()), None).await?;
+    let super_table = reader
+        .read_to_super_table(Some("CombinedData".to_string()), None)
+        .await?;
     let duration = start.elapsed();
-    
-    println!("  Created SuperTable '{}' in {:?}", super_table.name, duration);
+
+    println!(
+        "  Created SuperTable '{}' in {:?}",
+        super_table.name, duration
+    );
     println!("    Total rows: {}", super_table.n_rows);
     println!("    Number of batches: {}", super_table.batches.len());
     println!("    Schema fields: {}", super_table.schema.len());
-    
+
     // Show batch information
     for (i, batch) in super_table.batches.iter().enumerate() {
         println!("      Batch {}: {} rows", i + 1, batch.n_rows);
     }
-    
+
     // Verify schema consistency
     for field in &super_table.schema {
         println!("    Field: '{}' ({:?})", field.name, field.dtype);
     }
-    
+
     println!("  ✓ Successfully created SuperTable preserving batch structure");
     Ok(())
 }
@@ -163,30 +188,44 @@ async fn single_table_example(file_path: &Path) -> Result<(), Box<dyn std::error
     let source_tables = create_test_tables(4);
     let expected_total_rows: usize = source_tables.iter().map(|t| t.n_rows).sum();
     write_test_stream(&source_tables, file_path).await?;
-    
-    println!("  Created stream with {} tables ({} total rows)", 
-             source_tables.len(), expected_total_rows);
+
+    println!(
+        "  Created stream with {} tables ({} total rows)",
+        source_tables.len(),
+        expected_total_rows
+    );
 
     // Read into single combined Table
     let disk_stream = DiskByteStream::open(file_path, BufferChunkSize::Custom(8192)).await?;
     let reader = TableReader::new(disk_stream, 8192, IPCMessageProtocol::Stream);
-    
+
     let start = std::time::Instant::now();
-    let combined_table = reader.combine_to_table(Some("CombinedBatches".to_string())).await?;
+    let combined_table = reader
+        .combine_to_table(Some("CombinedBatches".to_string()))
+        .await?;
     let duration = start.elapsed();
-    
-    println!("  Created combined Table '{}' in {:?}", combined_table.name, duration);
-    println!("    Total rows: {} (expected: {})", combined_table.n_rows, expected_total_rows);
+
+    println!(
+        "  Created combined Table '{}' in {:?}",
+        combined_table.name, duration
+    );
+    println!(
+        "    Total rows: {} (expected: {})",
+        combined_table.n_rows, expected_total_rows
+    );
     println!("    Number of columns: {}", combined_table.cols.len());
-    
-    assert_eq!(combined_table.n_rows, expected_total_rows, "Row count should match");
-    
+
+    assert_eq!(
+        combined_table.n_rows, expected_total_rows,
+        "Row count should match"
+    );
+
     // Show sample data from the combined table
     if let Array::NumericArray(NumericArray::Int32(int_arr)) = &combined_table.cols[0].array {
         let sample_size = 10.min(combined_table.n_rows);
         let sample_data = &int_arr.data.as_ref()[0..sample_size];
         println!("    First {} IDs: {:?}", sample_size, sample_data);
-        
+
         // Verify data continuity (should be sequential across batches)
         if combined_table.n_rows > 0 {
             let first_id = int_arr.data.as_ref()[0];
@@ -194,7 +233,7 @@ async fn single_table_example(file_path: &Path) -> Result<(), Box<dyn std::error
             println!("    ID range: {} to {}", first_id, last_id);
         }
     }
-    
+
     println!("  ✓ Successfully combined all batches into single Table");
     Ok(())
 }
@@ -203,10 +242,10 @@ async fn single_table_example(file_path: &Path) -> Result<(), Box<dyn std::error
 fn create_test_tables(num_tables: usize) -> Vec<Table> {
     let mut tables = Vec::new();
     let mut global_id = 0;
-    
+
     for batch_num in 0..num_tables {
         let n_rows = 1000;
-        
+
         // Sequential integer IDs across all batches
         let int_data: Vec<i32> = (global_id..global_id + n_rows).map(|i| i as i32).collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
@@ -272,11 +311,11 @@ fn create_test_tables(num_tables: usize) -> Vec<Table> {
             n_rows,
             cols: vec![int_field, float_field, str_field],
         };
-        
+
         tables.push(table);
         global_id += n_rows;
     }
-    
+
     tables
 }
 
@@ -284,10 +323,12 @@ fn create_test_tables(num_tables: usize) -> Vec<Table> {
 fn create_varying_size_tables() -> Vec<Table> {
     let sizes = vec![500, 1500, 800, 2000, 300]; // Different batch sizes
     let mut tables = Vec::new();
-    
+
     for (batch_num, &n_rows) in sizes.iter().enumerate() {
         // Simple integer sequence
-        let int_data: Vec<i32> = (0..n_rows).map(|i| (batch_num as i32) * 10000 + i as i32).collect();
+        let int_data: Vec<i32> = (0..n_rows)
+            .map(|i| (batch_num as i32) * 10000 + i as i32)
+            .collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
             data: Buffer::from(Vec64::from_slice(&int_data)),
             null_mask: None,
@@ -307,24 +348,31 @@ fn create_varying_size_tables() -> Vec<Table> {
             n_rows,
             cols: vec![int_field],
         };
-        
+
         tables.push(table);
     }
-    
+
     tables
 }
 
 /// Write tables to stream for testing
-async fn write_test_stream(tables: &[Table], output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let schema: Vec<Field> = tables[0].cols.iter().map(|col| (*col.field).clone()).collect();
+async fn write_test_stream(
+    tables: &[Table],
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let schema: Vec<Field> = tables[0]
+        .cols
+        .iter()
+        .map(|col| (*col.field).clone())
+        .collect();
     let mut stream_writer = TableStreamWriter::<Vec64<u8>>::new(schema, IPCMessageProtocol::Stream);
-    
+
     // Write all tables
     for table in tables {
         stream_writer.write(table)?;
     }
     stream_writer.finish()?;
-    
+
     // Write to file
     let mut file = File::create(output_path).await?;
     while let Some(frame_result) = stream_writer.next_frame() {
@@ -332,6 +380,6 @@ async fn write_test_stream(tables: &[Table], output_path: &Path) -> Result<(), B
         file.write_all(frame.as_ref()).await?;
     }
     file.flush().await?;
-    
+
     Ok(())
 }

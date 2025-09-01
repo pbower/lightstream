@@ -1,14 +1,17 @@
 //! Basic CSV reading and writing example.
-//! 
+//!
 //! This example demonstrates how to:
 //! - Create a table with sample data
 //! - Write it to a CSV file
 //! - Read it back and verify the data
 
-use lightstream_io::models::writers::csv_writer::CsvWriter;
 use lightstream_io::models::readers::csv_reader::CsvReader;
+use lightstream_io::models::writers::csv_writer::CsvWriter;
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray};
+use minarrow::{
+    Array, Buffer, Field, FieldArray, FloatArray, IntegerArray, NumericArray, StringArray, Table,
+    TextArray, Vec64,
+};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -17,7 +20,11 @@ use tempfile::tempdir;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create sample data
     let table = create_sample_table();
-    println!("Created table with {} rows and {} columns", table.n_rows, table.cols.len());
+    println!(
+        "Created table with {} rows and {} columns",
+        table.n_rows,
+        table.cols.len()
+    );
 
     // Create a temporary directory for our example
     let temp_dir = tempdir()?;
@@ -29,7 +36,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read the table back from CSV
     let read_table = read_csv(&file_path).await?;
-    println!("Read table with {} rows and {} columns", read_table.n_rows, read_table.cols.len());
+    println!(
+        "Read table with {} rows and {} columns",
+        read_table.n_rows,
+        read_table.cols.len()
+    );
 
     // Verify the data matches (approximately, since CSV conversion may change types)
     verify_data(&table, &read_table)?;
@@ -104,7 +115,7 @@ async fn write_csv(table: &Table, file_path: &Path) -> Result<(), Box<dyn std::e
     writer.write_table(table)?;
     writer.flush()?;
     let csv_data = writer.into_inner();
-    
+
     // Write to file
     tokio::fs::write(file_path, csv_data).await?;
     Ok(())
@@ -122,7 +133,11 @@ async fn read_csv(file_path: &Path) -> Result<Table, Box<dyn std::error::Error>>
 fn verify_data(original: &Table, read_back: &Table) -> Result<(), Box<dyn std::error::Error>> {
     // Check basic structure
     assert_eq!(original.n_rows, read_back.n_rows, "Row count mismatch");
-    assert_eq!(original.cols.len(), read_back.cols.len(), "Column count mismatch");
+    assert_eq!(
+        original.cols.len(),
+        read_back.cols.len(),
+        "Column count mismatch"
+    );
 
     // Check column names (CSV reader may infer field names from headers)
     for (orig_col, read_col) in original.cols.iter().zip(read_back.cols.iter()) {

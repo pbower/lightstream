@@ -6,19 +6,22 @@
 //! - Read it back and verify the data
 //! - Shows zero-copy performance benefits of Arrow IPC
 
+use futures_util::StreamExt;
+use lightstream_io::enums::BufferChunkSize;
 use lightstream_io::enums::IPCMessageProtocol;
-use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
 use lightstream_io::models::readers::ipc::table_stream_reader::TableStreamReader64;
 use lightstream_io::models::streams::disk::DiskByteStream;
-use lightstream_io::enums::BufferChunkSize;
+use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, StringArray, BooleanArray, Bitmask};
+use minarrow::{
+    Array, Bitmask, BooleanArray, Buffer, Field, FieldArray, FloatArray, IntegerArray,
+    NumericArray, StringArray, Table, TextArray, Vec64,
+};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
 use tokio::fs::File;
-use futures_util::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,8 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create sample data
     let table = create_sample_table();
-    println!("Created table '{}' with {} rows and {} columns", 
-             table.name, table.n_rows, table.cols.len());
+    println!(
+        "Created table '{}' with {} rows and {} columns",
+        table.name,
+        table.n_rows,
+        table.cols.len()
+    );
 
     // Print table schema
     print_schema(&table);
@@ -71,7 +78,7 @@ fn create_sample_table() -> Table {
         int_array,
     );
 
-    // Create float column  
+    // Create float column
     let float_data: Vec<f64> = (0..n_rows).map(|i| (i as f64) * 0.1).collect();
     let float_array = Array::NumericArray(NumericArray::Float64(Arc::new(FloatArray {
         data: Buffer::from(Vec64::from_slice(&float_data)),
@@ -154,7 +161,10 @@ fn print_schema(table: &Table) {
 }
 
 /// Demonstrate Arrow IPC File format
-async fn arrow_file_example(table: &Table, file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn arrow_file_example(
+    table: &Table,
+    file_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Write to Arrow IPC File format
     let start = std::time::Instant::now();
     {
@@ -168,7 +178,11 @@ async fn arrow_file_example(table: &Table, file_path: &Path) -> Result<(), Box<d
 
     // Get file size
     let file_size = tokio::fs::metadata(file_path).await?.len();
-    println!("  File size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
+    println!(
+        "  File size: {} bytes ({:.2} KB)",
+        file_size,
+        file_size as f64 / 1024.0
+    );
 
     // Read from Arrow IPC File format
     let start = std::time::Instant::now();
@@ -185,7 +199,10 @@ async fn arrow_file_example(table: &Table, file_path: &Path) -> Result<(), Box<d
 }
 
 /// Demonstrate Arrow IPC Stream format
-async fn arrow_stream_example(table: &Table, stream_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn arrow_stream_example(
+    table: &Table,
+    stream_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Write to Arrow IPC Stream format
     let start = std::time::Instant::now();
     {
@@ -199,13 +216,17 @@ async fn arrow_stream_example(table: &Table, stream_path: &Path) -> Result<(), B
 
     // Get file size
     let file_size = tokio::fs::metadata(stream_path).await?.len();
-    println!("  Stream size: {} bytes ({:.2} KB)", file_size, file_size as f64 / 1024.0);
+    println!(
+        "  Stream size: {} bytes ({:.2} KB)",
+        file_size,
+        file_size as f64 / 1024.0
+    );
 
     // Read from Arrow IPC Stream format
     let start = std::time::Instant::now();
     let disk_stream = DiskByteStream::open(stream_path, BufferChunkSize::Custom(64 * 1024)).await?;
     let mut reader = TableStreamReader64::new(disk_stream, 64 * 1024, IPCMessageProtocol::Stream);
-    
+
     if let Some(read_result) = reader.next().await {
         let read_table = read_result?;
         let read_time = start.elapsed();
@@ -224,13 +245,23 @@ async fn arrow_stream_example(table: &Table, stream_path: &Path) -> Result<(), B
 /// Verify that two tables contain the same data
 fn verify_tables(original: &Table, read_back: &Table) -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(original.n_rows, read_back.n_rows, "Row count mismatch");
-    assert_eq!(original.cols.len(), read_back.cols.len(), "Column count mismatch");
+    assert_eq!(
+        original.cols.len(),
+        read_back.cols.len(),
+        "Column count mismatch"
+    );
 
     // Check each column
     for (orig_col, read_col) in original.cols.iter().zip(read_back.cols.iter()) {
-        assert_eq!(orig_col.field.name, read_col.field.name, "Column name mismatch");
-        assert_eq!(orig_col.field.dtype, read_col.field.dtype, "Column type mismatch");
-        
+        assert_eq!(
+            orig_col.field.name, read_col.field.name,
+            "Column name mismatch"
+        );
+        assert_eq!(
+            orig_col.field.dtype, read_col.field.dtype,
+            "Column type mismatch"
+        );
+
         // For this example, we assume data is identical (Arrow IPC preserves exact data)
         // In a real application, you might want more detailed data comparison
     }

@@ -1,5 +1,25 @@
-//! RecordBatch → Table decoder supporting Minarrow fixed‑width, Boolean,
-//! UTF‑8, LargeUTF‑8, and Dictionary columns.
+//! # IPC Parser
+//!
+//! Parses Arrow IPC `RecordBatch` messages into a `minarrow::Table`.
+//!
+//! ## Supported columns
+//! - Fixed-width numerics: i32/i64, u32/u64, f32/f64
+//!   - Optional: i8/u8, i16/u16 via `extended_numeric_types`
+//! - Boolean (bit-packed)
+//! - UTF-8 / LargeUTF-8 (32/64-bit offsets; `LargeString` behind `large_string`)
+//! - Dictionary-encoded text (UInt32 by default; UInt8/UInt16/UInt64 behind `extended_categorical`)
+//! - Date32/Date64 behind `datetime`
+//!
+//! ## Zero-copy behaviour
+//! If an Arc-backed body is supplied and buffers are correctly aligned, columns are
+//! created as shared views without buffer copies. Otherwise the decoder falls back to copying.
+//! 
+//! ## Errors and limits
+//! - Compressed `RecordBatch` bodies are not supported.
+//! - Dictionary delta batches are rejected.
+//! - All buffer regions are bounds-checked; malformed metadata yields `io::Error`.
+//!
+//! See the [Apache Arrow IPC specification](https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format).
 
 use std::io;
 use std::sync::Arc;
@@ -37,7 +57,6 @@ impl RecordBatchParser {
             ));
         }
 
-        // TODO: Compression handling
         if let Some(BodyCompression { .. }) = message
             .header_as_record_batch()
             .and_then(|rb| rb.compression())
@@ -1485,20 +1504,16 @@ where
                     body.len(),
                 )?;
 
-                // For boolean, we still need to copy as it's bit-packed
-                let arr = BooleanArray {
-                    data: Bitmask {
-                        bits: minarrow::Buffer::from(Vec64::from_slice(data_slice)),
-                        len: n_rows,
-                    },
-                    len: n_rows,
+                push_boolean_col_shared(
+                    &mut cols,
+                    field,
+                    data_slice,
+                    data_offset,
+                    n_rows,
                     null_mask,
-                    _phantom: PhantomData,
-                };
-                cols.push(FieldArray::new(
-                    field.clone(),
-                    Array::BooleanArray(arr.into()),
-                ));
+                    &arc_data,
+                    body_offset,
+                );
             }
             ArrowType::String => {
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
@@ -2050,10 +2065,16 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
-    
+
     let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
-    debug_println!("Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}", 
-                  field.name, body_offset, data_offset, final_addr, final_addr % 64 == 0);
+    debug_println!(
+        "Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}",
+        field.name,
+        body_offset,
+        data_offset,
+        final_addr,
+        final_addr % 64 == 0
+    );
 
     // Create a wrapper that references the slice we need
     struct SliceWrapper<M: ?Sized> {
@@ -2083,15 +2104,93 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     };
 
     let shared = SharedBuffer::from_owner(wrapper);
-    debug_println!("SharedBuffer pointer for {}: {:p}, aligned: {}", 
-                  field.name, shared.as_slice().as_ptr(), 
-                  shared.as_slice().as_ptr() as usize % 64 == 0);
+    debug_println!(
+        "SharedBuffer pointer for {}: {:p}, aligned: {}",
+        field.name,
+        shared.as_slice().as_ptr(),
+        shared.as_slice().as_ptr() as usize % 64 == 0
+    );
     let data = minarrow::Buffer::from_shared(shared);
 
     let arr = Arc::new(IntegerArray { data, null_mask });
     cols.push(FieldArray::new(
         field.clone(),
         Array::NumericArray(make_array(arr)),
+    ));
+}
+
+/// Appends a boolean column to the columns vector using shared buffer when possible.
+///
+/// Follows the same zero-copy pattern as numeric types - uses SharedBuffer when alignment allows,
+/// falls back to copying when necessary.
+fn push_boolean_col_shared<M: ?Sized>(
+    cols: &mut Vec<FieldArray>,
+    field: &Field,
+    data_slice: &[u8],
+    data_offset: usize,
+    n_rows: usize,
+    null_mask: Option<Bitmask>,
+    arc_data: &Arc<M>,
+    body_offset: usize,
+) where
+    M: AsRef<[u8]> + Send + Sync + 'static,
+{
+    use minarrow::structs::shared_buffer::SharedBuffer;
+    let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
+    debug_println!(
+        "Boolean buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}",
+        field.name,
+        body_offset,
+        data_offset,
+        final_addr,
+        final_addr % 64 == 0
+    );
+    
+    // Create a wrapper that references the slice we need
+    struct SliceWrapper<M: ?Sized> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = self._owner.as_ref();
+            let slice = full.as_ref();
+            &slice[self.offset..self.offset + self.len]
+        }
+    }
+    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+    
+    let absolute_offset = body_offset + data_offset;
+    let byte_len = data_slice.len();
+    let wrapper = SliceWrapper {
+        _owner: arc_data.clone(),
+        offset: absolute_offset,
+        len: byte_len,
+    };
+    let shared = SharedBuffer::from_owner(wrapper);
+    debug_println!(
+        "SharedBuffer pointer for {}: {:p}, aligned: {}",
+        field.name,
+        shared.as_slice().as_ptr(),
+        shared.as_slice().as_ptr() as usize % 64 == 0
+    );
+    
+    let bits_buffer = minarrow::Buffer::from_shared(shared);
+    let bool_data = Bitmask {
+        bits: bits_buffer,
+        len: n_rows,
+    };
+    let arr = BooleanArray {
+        data: bool_data,
+        len: n_rows,
+        null_mask,
+        _phantom: PhantomData,
+    };
+    cols.push(FieldArray::new(
+        field.clone(),
+        Array::BooleanArray(arr.into()),
     ));
 }
 

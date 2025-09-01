@@ -1,3 +1,5 @@
+//! Contains helper utilities reused across Lightstream
+
 use tokio::io;
 
 use crate::traits::stream_buffer::StreamBuffer;
@@ -36,12 +38,6 @@ pub fn strip_continuation_prefix(buf: &[u8]) -> io::Result<&[u8]> {
 }
 
 /// Aligns the stream buffer to its alignment boundary
-// #[inline(always)]
-// pub fn align_to<B: StreamBuffer>(n: usize) -> usize {
-//     let rem = n % B::ALIGN;
-//     if rem == 0 { 0 } else { B::ALIGN - rem }
-// }
-
 #[inline(always)]
 pub fn align_to<B: StreamBuffer>(n: usize) -> usize {
     let rem = n % B::ALIGN;
@@ -103,7 +99,7 @@ pub(crate) fn extract_dictionary_values_from_col(
 }
 
 /// Write Parquet-compliant bit-packed Boolean buffer for a sequence of booleans.
-/// Output is LSB0 (least significant bit first, 8 booleans per byte).
+/// Output is LSB0 - least significant bit first, 8 booleans per byte.
 pub fn write_parquet_bool_bits<I>(iter: I, len: usize, buf: &mut Vec<u8>)
 where
     I: Iterator<Item = bool>,

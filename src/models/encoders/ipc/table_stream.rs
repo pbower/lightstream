@@ -7,6 +7,7 @@ use futures_core::Stream;
 use minarrow::{ArrowType, Field, Table, Vec64};
 
 use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
+use crate::compression::{Compression, compress};
 use crate::constants::DEFAULT_FRAME_ALLOCATION_SIZE;
 use crate::enums::{IPCMessageProtocol, WriterState};
 use crate::models::encoders::ipc::protocol::{IPCFrame, IPCFrameEncoder};
@@ -55,6 +56,9 @@ where
 
     /// Current state of the writer (Fresh, SchemaDone, Closed, etc)
     pub state: WriterState,
+
+    /// Compression codec for record batch bodies
+    pub compression: Compression,
 
     /// Arrow schema for this stream (column definitions)
     pub schema: Vec<Field>,
@@ -111,6 +115,36 @@ where
         Self {
             protocol,
             state: WriterState::Fresh,
+            compression: Compression::None,
+            schema,
+            written_dict_ids: HashSet::new(),
+            dictionaries: HashMap::new(),
+            fbb: flatbuffers::FlatBufferBuilder::with_capacity(4096),
+            blocks_record_batches: Vec::new(),
+            blocks_dictionaries: Vec::new(),
+            frame_offsets: vec![],
+            out_frames: VecDeque::new(),
+            total_len_offset: 0,
+            global_offset: 0,
+            finished: false,
+            waker: None,
+        }
+    }
+
+    /// Construct a new [`GenTableStreamWriter`] with compression for the specified schema and protocol.
+    ///
+    /// # Arguments
+    /// - `schema`: Vector of Arrow [`Field`]s describing the table structure.
+    /// - `protocol`: Arrow IPC protocol (file or stream).
+    /// - `compression`: Compression codec to apply to record batch bodies.
+    ///
+    /// # Returns
+    /// New streaming writer in [`WriterState::Fresh`] state.
+    pub fn with_compression(schema: Vec<Field>, protocol: IPCMessageProtocol, compression: Compression) -> Self {
+        Self {
+            protocol,
+            state: WriterState::Fresh,
+            compression,
             schema,
             written_dict_ids: HashSet::new(),
             dictionaries: HashMap::new(),
@@ -361,13 +395,17 @@ where
     /// Estimate the total buffer size needed for a table's data to avoid expensive reallocations.
     fn estimate_body_size(&self, tbl: &Table) -> usize {
         let mut total_size = 0;
-        
+
         for array in &tbl.cols {
             match &array.array {
                 Array::NumericArray(num) => {
                     let data_size = match num {
-                        NumericArray::Int32(_) | NumericArray::UInt32(_) | NumericArray::Float32(_) => tbl.n_rows * 4,
-                        NumericArray::Int64(_) | NumericArray::UInt64(_) | NumericArray::Float64(_) => tbl.n_rows * 8,
+                        NumericArray::Int32(_)
+                        | NumericArray::UInt32(_)
+                        | NumericArray::Float32(_) => tbl.n_rows * 4,
+                        NumericArray::Int64(_)
+                        | NumericArray::UInt64(_)
+                        | NumericArray::Float64(_) => tbl.n_rows * 8,
                         #[cfg(feature = "extended_numeric_types")]
                         NumericArray::Int8(_) | NumericArray::UInt8(_) => tbl.n_rows,
                         #[cfg(feature = "extended_numeric_types")]
@@ -388,7 +426,7 @@ where
                 }
             }
         }
-        
+
         total_size
     }
 
@@ -401,7 +439,7 @@ where
     pub fn encode_record_batch(&mut self, tbl: &Table) -> io::Result<(Vec<u8>, B)> {
         let mut fb_field_nodes = Vec::with_capacity(tbl.cols.len());
         let mut fb_buffers = Vec::new();
-        
+
         // Calculate estimated buffer size to avoid expensive reallocations
         let estimated_size = self.estimate_body_size(tbl);
         let mut body = B::with_capacity(estimated_size.max(DEFAULT_FRAME_ALLOCATION_SIZE));
@@ -749,6 +787,63 @@ fn push_buffer<B: StreamBuffer>(body: &mut B, bytes: &[u8]) -> fbm::Buffer {
     }
     // Metadata buffer (Flatbuffers) offsets are returned
     fbm::Buffer::new(offset as i64, len as i64)
+}
+
+/// Append a new Arrow IPC buffer region to the output body with optional compression.
+///
+/// When compression is enabled, the buffer is compressed according to Arrow IPC spec:
+/// - 8-byte little-endian uncompressed length header
+/// - Followed by compressed data
+/// - Padding applied to the final (compressed) length
+///
+/// # Arguments
+/// - `body`: Output vector to append to.
+/// - `bytes`: Raw data to write.
+/// - `compression`: Compression codec to apply.
+///
+/// # Returns
+/// Arrow buffer metadata (offset, original uncompressed length), for FlatBuffers metadata.
+#[inline(always)]
+fn push_buffer_with_compression<B: StreamBuffer>(
+    body: &mut B,
+    bytes: &[u8],
+    compression: Compression,
+) -> Result<fbm::Buffer, io::Error> {
+    let offset = body.len();
+    let original_len = bytes.len();
+
+    if compression == Compression::None {
+        // No compression - use the standard path
+        return Ok(push_buffer(body, bytes));
+    }
+
+    // Compress the buffer data
+    let compressed = compress(bytes, compression)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Compression failed: {}", e)))?;
+    
+    // Write 8-byte uncompressed length header (little-endian)
+    let uncompressed_len_bytes = (original_len as u64).to_le_bytes();
+    body.extend_from_slice(&uncompressed_len_bytes);
+    
+    // Write compressed data in chunks to avoid blocking
+    const CHUNK_SIZE: usize = 1024 * 1024; // 1MB chunks
+    if compressed.len() > CHUNK_SIZE {
+        for chunk in compressed.chunks(CHUNK_SIZE) {
+            body.extend_from_slice(chunk);
+        }
+    } else {
+        body.extend_from_slice(&compressed);
+    }
+    
+    // Calculate padding for the total written length (header + compressed data)
+    let total_written = 8 + compressed.len();
+    let pad = align_to::<B>(total_written);
+    if pad != 0 {
+        body.extend_from_slice(&[0u8; 64][..pad]);
+    }
+
+    // Return metadata with original uncompressed length for Arrow spec compliance
+    Ok(fbm::Buffer::new(offset as i64, original_len as i64))
 }
 
 /// Construct an Arrow IPC null bitmap buffer and emit into the output body.

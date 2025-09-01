@@ -1,12 +1,18 @@
-//! Error types for parquet IO
+//! # I/O Errors
+//!
+//! Unified error type for all reader/writer operations in Lightstream.
+//!
+//! Covers I/O failures, type mismatches, schema violations, compression errors,
+//! and other protocol-level inconsistencies. Conversion impls are provided for
+//! common error sources so that encoders/decoders can propagate errors directly.
 
 use std::string::FromUtf8Error;
 use std::{error, fmt, io};
 
-/// Unified error type for all parquet_writer operations.
+/// Unified error type for all I/O operations.
 #[derive(Debug)]
 pub enum IoError {
-    /// I/O failure (write error, flush error, file system error).
+    /// Underlying I/O failure (write error, flush error, file system error).
     Io(io::Error),
 
     /// Input table or column contains unsupported or mismatched types.
@@ -15,8 +21,8 @@ pub enum IoError {
     /// Null mask or definition level inconsistency detected.
     NullMaskInconsistent(String),
 
-    /// Malformed or invalid input data (UTF-8 error, bounds error, etc).
-    MinarrowError(String),
+    /// Malformed or invalid input data (UTF-8 error, bounds error, etc.).
+    InputDataError(String),
 
     /// Metadata or schema violation.
     Metadata(String),
@@ -27,10 +33,10 @@ pub enum IoError {
     /// Internal logic error (should never occur).
     Internal(String),
 
-    /// Data Formatting error
+    /// Data formatting error.
     Format(String),
 
-    /// Unsupported encoding error
+    /// Unsupported encoding error.
     UnsupportedEncoding(String),
 }
 
@@ -40,7 +46,7 @@ impl fmt::Display for IoError {
             IoError::Io(e) => write!(f, "I/O error: {}", e),
             IoError::UnsupportedType(s) => write!(f, "Unsupported type: {}", s),
             IoError::NullMaskInconsistent(s) => write!(f, "Null mask inconsistency: {}", s),
-            IoError::MinarrowError(s) => write!(f, "Data error: {}", s),
+            IoError::InputDataError(s) => write!(f, "Data error: {}", s),
             IoError::Metadata(s) => write!(f, "Metadata error: {}", s),
             IoError::Compression(s) => write!(f, "Compression error: {}", s),
             IoError::Internal(s) => write!(f, "Internal error: {}", s),
@@ -59,7 +65,7 @@ impl error::Error for IoError {
     }
 }
 
-// --- Conversions for error handling ---
+// Conversions for error handling
 
 impl From<io::Error> for IoError {
     fn from(e: io::Error) -> Self {
@@ -69,27 +75,15 @@ impl From<io::Error> for IoError {
 
 impl From<FromUtf8Error> for IoError {
     fn from(e: FromUtf8Error) -> Self {
-        IoError::MinarrowError(e.to_string())
+        IoError::InputDataError(e.to_string())
     }
 }
 
-#[cfg(feature = "zstd")]
-impl From<zstd::stream::EncoderError> for IoError {
-    fn from(e: zstd::stream::EncoderError) -> Self {
-        IoError::Compression(format!("Zstd: {e}"))
-    }
-}
-
-#[cfg(feature = "zstd")]
-impl From<zstd::stream::WriteError> for IoError {
-    fn from(e: zstd::stream::WriteError) -> Self {
-        IoError::Compression(format!("Zstd: {e}"))
-    }
-}
+// Zstd error handling is done manually in the compression.rs file
 
 #[cfg(feature = "snappy")]
-impl From<snappy::Error> for IoError {
-    fn from(e: snappy::Error) -> Self {
+impl From<snap::Error> for IoError {
+    fn from(e: snap::Error) -> Self {
         IoError::Compression(format!("Snappy: {e}"))
     }
 }

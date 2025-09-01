@@ -33,12 +33,16 @@ pub fn compress(input: &[u8], codec: Compression) -> Result<Vec<u8>, IoError> {
     }
 }
 
-/// Snappy compression using the rust-snappy crate.
+/// Snappy compression using the snap crate.
 #[cfg(feature = "snappy")]
 fn snappy_compress(input: &[u8]) -> Result<Vec<u8>, IoError> {
-    let mut out = Vec::with_capacity(snappy::max_compress_len(input.len()));
-    snappy::compress(input, &mut out);
-    out.shrink_to_fit();
+    use snap::raw::{Encoder, max_compress_len};
+    let mut encoder = Encoder::new();
+    let max_len = max_compress_len(input.len());
+    let mut out = vec![0u8; max_len];
+    let compressed_len = encoder.compress(input, &mut out)
+        .map_err(|e| IoError::Compression(format!("Snappy compression failed: {:?}", e)))?;
+    out.truncate(compressed_len);
     Ok(out)
 }
 
@@ -46,7 +50,8 @@ fn snappy_compress(input: &[u8]) -> Result<Vec<u8>, IoError> {
 #[cfg(feature = "zstd")]
 fn zstd_compress(input: &[u8]) -> Result<Vec<u8>, IoError> {
     // Level 1 is fastest, with good compression.
-    zstd::stream::encode_all(input, 1).map_err(IoError::from)
+    zstd::stream::encode_all(input, 1)
+        .map_err(|e| IoError::Compression(format!("Zstd compression failed: {e}")))
 }
 
 /// Decompress a buffer according to the codec.
@@ -70,7 +75,8 @@ pub fn decompress(input: &[u8], codec: Compression) -> Result<Vec<u8>, IoError> 
 
 #[cfg(feature = "snappy")]
 fn snappy_decompress(input: &[u8]) -> Result<Vec<u8>, IoError> {
-    let mut decoder = snappy::Decoder::new();
+    use snap::raw::Decoder;
+    let mut decoder = Decoder::new();
     decoder
         .decompress_vec(input)
         .map_err(|e| IoError::Compression(format!("Snappy decompression failed: {:?}", e)))
@@ -78,7 +84,8 @@ fn snappy_decompress(input: &[u8]) -> Result<Vec<u8>, IoError> {
 
 #[cfg(feature = "zstd")]
 fn zstd_decompress(input: &[u8]) -> Result<Vec<u8>, IoError> {
-    zstd::stream::decode_all(input).map_err(IoError::from)
+    zstd::stream::decode_all(input)
+        .map_err(|e| IoError::Compression(format!("Zstd decompression failed: {e}")))
 }
 
 /// Returns the codec as a Parquet-format string identifier.
