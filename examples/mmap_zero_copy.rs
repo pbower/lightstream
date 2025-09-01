@@ -26,6 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let table = create_large_table();
     println!("Created table '{}' with {} rows and {} columns", 
              table.name, table.n_rows, table.cols.len());
+    
 
     // Create a temporary directory for our example
     let temp_dir = tempdir()?;
@@ -33,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Write to Arrow IPC File format
     println!("\n1. Writing to Arrow IPC File");
-    write_arrow_file(&table, &file_path).await?;
-
+    write_arrow_file(table, &file_path).await?;
+    println!("Completed");
     // Read using memory mapping (zero-copy)
     #[cfg(feature = "mmap")]
     {
@@ -54,24 +55,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn create_large_table() -> Table {
     let n_rows = 1_000_000;
     
-    // Just create another numeric column - simple and fast
+    // Use from_iter to avoid extend overhead
     let extra_data: Vec64<u32> = (0..n_rows).map(|i| (i % 1000) as u32).collect();
-    
-    // Create arrays from pre-built buffers
-    let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
+    let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();  
     let float_data: Vec64<f64> = (0..n_rows).map(|i| i as f64 * 0.1).collect();
-    
+
     let mut bitmask = Bitmask::with_capacity(n_rows);
     for i in 0..n_rows {
         bitmask.set(i, i % 2 == 0);
     }
-    
     // Build table with pre-created buffers
     let int_array = Arc::new(IntegerArray::new(Buffer::from(int_data), None));
     let float_array = Arc::new(FloatArray::new(Buffer::from(float_data), None));
     let extra_array = Arc::new(IntegerArray::new(Buffer::from(extra_data), None));
     let bool_array = Arc::new(BooleanArray::new(bitmask, None));
-    
+
     Table {
         name: "large_aligned_data".to_string(),
         n_rows,
@@ -94,16 +92,21 @@ fn create_large_table() -> Table {
             ),
         ],
     }
+    
 }
 
 /// Write table to Arrow IPC File format
-async fn write_arrow_file(table: &Table, file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn write_arrow_file(table: Table, file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let start = std::time::Instant::now();
     {
+        println!("  Creating file and writer...");
         let file = File::create(file_path).await?;
         let schema: Vec<Field> = table.cols.iter().map(|col| (*col.field).clone()).collect();
         let mut writer = TableWriter::new(file, schema, IPCMessageProtocol::File)?;
-        writer.write_all_tables(vec![table.clone()]).await?;
+        
+        println!("  Starting write_all_tables...");
+        writer.write_all_tables(vec![table]).await?;
+        println!("  Finished write_all_tables");
     }
     let write_time = start.elapsed();
     

@@ -111,7 +111,14 @@ where
 
             // Attempt to write current frame.
             if let Some(buf) = self.frame_buf.take() {
-                let chunk = &buf.as_ref()[self.frame_pos..];
+                let remaining = &buf.as_ref()[self.frame_pos..];
+                // Limit chunk size to avoid blocking the async runtime
+                const MAX_WRITE_CHUNK: usize = 1024 * 1024; // 1MB chunks
+                let chunk = if remaining.len() > MAX_WRITE_CHUNK {
+                    &remaining[..MAX_WRITE_CHUNK]
+                } else {
+                    remaining
+                };
                 match Pin::new(&mut self.destination).poll_write(cx, chunk) {
                     Poll::Pending => {
                         self.frame_buf = Some(buf);
@@ -122,6 +129,8 @@ where
                         self.frame_pos += n;
                         if self.frame_pos < buf.as_ref().len() {
                             self.frame_buf = Some(buf);
+                            // Explicitly wake the task to ensure it gets polled again
+                            cx.waker().wake_by_ref();
                             return Poll::Pending;
                         } else {
                             // frame fully written – loop for next

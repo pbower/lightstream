@@ -358,6 +358,40 @@ where
         Ok(())
     }
 
+    /// Estimate the total buffer size needed for a table's data to avoid expensive reallocations.
+    fn estimate_body_size(&self, tbl: &Table) -> usize {
+        let mut total_size = 0;
+        
+        for array in &tbl.cols {
+            match &array.array {
+                Array::NumericArray(num) => {
+                    let data_size = match num {
+                        NumericArray::Int32(_) | NumericArray::UInt32(_) | NumericArray::Float32(_) => tbl.n_rows * 4,
+                        NumericArray::Int64(_) | NumericArray::UInt64(_) | NumericArray::Float64(_) => tbl.n_rows * 8,
+                        #[cfg(feature = "extended_numeric_types")]
+                        NumericArray::Int8(_) | NumericArray::UInt8(_) => tbl.n_rows,
+                        #[cfg(feature = "extended_numeric_types")]
+                        NumericArray::Int16(_) | NumericArray::UInt16(_) => tbl.n_rows * 2,
+                        _ => tbl.n_rows * 8, // Default to 8 bytes per row
+                    };
+                    total_size += data_size + 64; // Data + padding
+                }
+                Array::BooleanArray(_) => {
+                    total_size += (tbl.n_rows + 7) / 8 + 64; // Bitmask + padding
+                }
+                Array::TextArray(_) => {
+                    // Rough estimate: assume average 20 chars per string
+                    total_size += tbl.n_rows * 24 + 64; // Offsets (4 bytes) + avg data (20 bytes) + padding
+                }
+                _ => {
+                    total_size += tbl.n_rows * 8 + 64; // Default estimate + padding
+                }
+            }
+        }
+        
+        total_size
+    }
+
     /// Serialises a [`Table`] as an Arrow IPC record batch, returning (metadata, body) buffers.
     ///
     /// Encodes all columns into Arrow-compliant buffers, constructs the FlatBuffers metadata,
@@ -367,7 +401,10 @@ where
     pub fn encode_record_batch(&mut self, tbl: &Table) -> io::Result<(Vec<u8>, B)> {
         let mut fb_field_nodes = Vec::with_capacity(tbl.cols.len());
         let mut fb_buffers = Vec::new();
-        let mut body = B::with_capacity(DEFAULT_FRAME_ALLOCATION_SIZE);
+        
+        // Calculate estimated buffer size to avoid expensive reallocations
+        let estimated_size = self.estimate_body_size(tbl);
+        let mut body = B::with_capacity(estimated_size.max(DEFAULT_FRAME_ALLOCATION_SIZE));
         for (col_idx, array) in tbl.cols.iter().enumerate() {
             // here we check in non-release builds that the declared schema Field
             // matches the actual Field from the array, that we pull here to
@@ -691,7 +728,15 @@ where
 fn push_buffer<B: StreamBuffer>(body: &mut B, bytes: &[u8]) -> fbm::Buffer {
     let offset = body.len();
     // Actual IPC data buffer modifies in-place
-    body.extend_from_slice(bytes);
+    // For very large slices, chunk the copy to avoid blocking the runtime too long
+    const CHUNK_SIZE: usize = 1024 * 1024; // 1MB chunks
+    if bytes.len() > CHUNK_SIZE {
+        for chunk in bytes.chunks(CHUNK_SIZE) {
+            body.extend_from_slice(chunk);
+        }
+    } else {
+        body.extend_from_slice(bytes);
+    }
     let len = bytes.len();
 
     // Here - we don't actually update the global offset, we just know,
