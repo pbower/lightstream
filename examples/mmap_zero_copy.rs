@@ -10,8 +10,8 @@ use lightstream_io::enums::IPCMessageProtocol;
 use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 #[cfg(feature = "mmap")]
 use lightstream_io::models::readers::ipc::mmap_table_reader::MmapTableReader;
-use minarrow::ffi::arrow_dtype::{ArrowType, CategoricalIndexType};
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, TextArray, Vec64, Buffer, IntegerArray, FloatArray, CategoricalArray, BooleanArray, Bitmask};
+use minarrow::ffi::arrow_dtype::ArrowType;
+use minarrow::{Array, Field, FieldArray, NumericArray, Table, Vec64, Buffer, IntegerArray, FloatArray, BooleanArray, Bitmask};
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Create a large table with pre-built standard buffers
 fn create_large_table() -> Table {
-    let n_rows = 1_000_000;
+    let n_rows = 100_000_000;
     
     // Use from_iter to avoid extend overhead
     let extra_data: Vec64<u32> = (0..n_rows).map(|i| (i % 1000) as u32).collect();
@@ -136,7 +136,7 @@ fn read_with_mmap(file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!("  Sample int data (mmap): {:?}", &int_arr.data.as_ref()[0..5]);
     }
        
-    println!("  ✓ Data accessed directly from memory-mapped file (no copying!)");
+    println!("  ✓ Data accessed directly from memory-mapped file");
     
     Ok(())
 }
