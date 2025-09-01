@@ -1036,9 +1036,12 @@ pub(crate) fn handle_record_batch(
                     data_slice.len(),
                     body.len(),
                 )?;
-                // Check if this is actually u32 offset data misidentified as LargeString
+                // FIXME: This heuristic exists because our FlatBuffer schema is from an older Arrow version
+                // that lacks the LargeUtf8 type. When large_string feature is enabled, ALL Utf8 types
+                // are misclassified as LargeString, but some data actually uses String32 (u32 offsets).
+                // The proper fix is to regenerate FlatBuffers from newer Arrow schema with LargeUtf8 support.
                 if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
-                    // Likely u32 offsets, parse as String32 instead
+                    // Likely u32 offsets misclassified as LargeString, parse as String32 instead
                     let offs_u32 = cast_slice::<u32>(offs_slice);
                     let arr = TextArray::String32(
                         StringArray::new(
@@ -1050,7 +1053,7 @@ pub(crate) fn handle_record_batch(
                     );
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 } else {
-                    // Actual u64 offsets
+                    // Actual u64 offsets for LargeString
                     let offs = cast_slice::<u64>(offs_slice);
                     let arr = TextArray::String64(
                         StringArray::new(
@@ -1589,9 +1592,12 @@ where
                 let data_shared = full_shared.slice((body_offset + data_offset)..(body_offset + data_offset + data_slice.len()));
                 let data_buf = minarrow::Buffer::from_shared(data_shared);
 
-                // Check if this is actually u32 offset data misidentified as LargeString
+                // FIXME: This heuristic exists because our FlatBuffer schema is from an older Arrow version
+                // that lacks the LargeUtf8 type. When large_string feature is enabled, ALL Utf8 types
+                // are misclassified as LargeString, but some data actually uses String32 (u32 offsets).
+                // The proper fix is to regenerate FlatBuffers from newer Arrow schema with LargeUtf8 support.
                 if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
-                    // Likely u32 offsets, parse as String32 instead
+                    // Likely u32 offsets misclassified as LargeString, parse as String32 instead
                     let offs_shared = full_shared.slice((body_offset + offs_offset)..(body_offset + offs_offset + offs_slice.len()));
                     let offs_buf: minarrow::Buffer<u32> =
                         minarrow::Buffer::from_shared(offs_shared);
@@ -1600,7 +1606,7 @@ where
                         TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 } else {
-                    // Actual u64 offsets
+                    // Actual u64 offsets for LargeString
                     let offs_shared = full_shared.slice((body_offset + offs_offset)..(body_offset + offs_offset + offs_slice.len()));
                     let offs_buf: minarrow::Buffer<u64> =
                         minarrow::Buffer::from_shared(offs_shared);
@@ -1874,6 +1880,8 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
         }
         #[cfg(not(feature = "large_string"))]
         fb::Type::Utf8 => Ok(ArrowType::String),
+        #[cfg(feature = "large_string")]
+        fb::Type::Utf8 => Ok(ArrowType::LargeString),
         fb::Type::FloatingPoint => {
             let f = fb_field.type__as_floating_point().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "missing FloatingPoint type")
@@ -1895,8 +1903,6 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
             convert_date_unit_fb(d.unit())
         }
         fb::Type::Bool => Ok(ArrowType::Boolean),
-        #[cfg(feature = "large_string")]
-        fb::Type::Utf8 => Ok(ArrowType::LargeString),
         other => {
             if let Some(dict) = fb_field.dictionary() {
                 let idx_ty = extract_categorical_index_type(dict.indexType().as_ref())?;

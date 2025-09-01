@@ -1,30 +1,37 @@
-//! Parquet Encoding helpers
+//! # Parquet Encoding Helpers
 //!
-//! - All binary data are written little-endian.  
-//! - Booleans are stored bit-packed, LSB-first, per the Parquet format.
+//! Little-endian “plain” encoders for numeric/temporal types, bit-packed boolean
+//! encoding, UTF-8 string encoders, and hybrid RLE/bit-packing for dictionary indices. 
+//! Booleans are stored bit-packed, LSB-first, per the Parquet format.
 
-// Primitive  encoders
+// Primitive encoders
 
 use minarrow::Bitmask;
 
 use crate::error::IoError;
 
+/// Encode `i32` values using Parquet plain little-endian format, appending to `out`.
 pub fn encode_int32_plain(data: &[i32], out: &mut Vec<u8>) {
     for v in data {
         out.extend_from_slice(&v.to_le_bytes());
     }
 }
+
+/// Encode `i64` values using Parquet plain little-endian format, appending to `out`.
 pub fn encode_int64_plain(data: &[i64], out: &mut Vec<u8>) {
     for v in data {
         out.extend_from_slice(&v.to_le_bytes());
     }
 }
 
+/// Encode `u32` values using Parquet plain little-endian format, appending to `out`.
 pub fn encode_uint32_as_int32_plain(data: &[u32], out: &mut Vec<u8>) {
     for &v in data {
         out.extend_from_slice(&v.to_le_bytes());
     }
 }
+
+/// Encode `u64` values using Parquet plain little-endian format, appending to `out`.
 pub fn encode_uint64_as_int64_plain(data: &[u64], out: &mut Vec<u8>) {
     for &v in data {
         out.extend_from_slice(&v.to_le_bytes());
@@ -32,23 +39,29 @@ pub fn encode_uint64_as_int64_plain(data: &[u64], out: &mut Vec<u8>) {
 }
 
 #[cfg(feature = "extended_numeric_types")]
+/// Encode `u8` values as `u32` little-endian using Parquet plain format, appending to `out`.
 pub fn encode_uint8_as_int32_plain(data: &[u8], out: &mut Vec<u8>) {
     for &v in data {
         out.extend_from_slice(&(v as u32).to_le_bytes());
     }
 }
+
 #[cfg(feature = "extended_numeric_types")]
+/// Encode `u16` values as `u32` little-endian using Parquet plain format, appending to `out`.
 pub fn encode_uint16_as_int32_plain(data: &[u16], out: &mut Vec<u8>) {
     for &v in data {
         out.extend_from_slice(&(v as u32).to_le_bytes());
     }
 }
 
+/// Encode `f32` values using Parquet plain IEEE-754 little-endian format, appending to `out`.
 pub fn encode_float32_plain(data: &[f32], out: &mut Vec<u8>) {
     for v in data {
         out.extend_from_slice(&v.to_le_bytes());
     }
 }
+
+/// Encode `f64` values using Parquet plain IEEE-754 little-endian format, appending to `out`.
 pub fn encode_float64_plain(data: &[f64], out: &mut Vec<u8>) {
     for v in data {
         out.extend_from_slice(&v.to_le_bytes());
@@ -58,6 +71,8 @@ pub fn encode_float64_plain(data: &[f64], out: &mut Vec<u8>) {
 // Boolean – bit-packed “plain” encoding
 //
 // We only support RLE encoding for Categorical types at the present time.
+
+/// Encode a boolean column bit-packed (LSB-first), respecting `null_mask`, appending to `out`.
 pub fn encode_bool_bitpacked(
     values: &Bitmask,
     null_mask: Option<&Bitmask>,
@@ -87,6 +102,9 @@ pub fn encode_bool_bitpacked(
 
 // UTF-8 strings
 
+/// Encode String32 (UTF-8) using length-prefix (u32 LE) per row
+/// 
+/// Nulls emit zero length.
 pub fn encode_string_plain(
     offsets: &[u32],
     values: &[u8],
@@ -110,6 +128,9 @@ pub fn encode_string_plain(
 }
 
 #[cfg(feature = "large_string")]
+/// Encode LargeString (i.e., UTF-8, 64-bit offsets) as length-prefix (u32 LE)
+/// 
+/// Nulls emit zero length.
 pub fn encode_large_string_plain(
     offsets: &[u64],
     values: &[u8],
@@ -139,23 +160,27 @@ pub fn encode_large_string_plain(
 }
 
 // Temporal aliases for the same physical type
+
+/// Encode `DATE32`/`TIME32` using Parquet plain format.
+/// 
+/// Backed by a physical i32.
 pub fn encode_datetime32_plain(data: &[i32], out: &mut Vec<u8>) {
     encode_int32_plain(data, out)
 }
+
+/// Encode `DATE64`/`TIME64` using Parquet plain format.
+/// 
+/// Backed by a physical i64.
 pub fn encode_datetime64_plain(data: &[i64], out: &mut Vec<u8>) {
     encode_int64_plain(data, out)
 }
 
 // RLE for dictionary indices
 
-/// Encode dictionary indices using Parquet’s hybrid RLE / bit-packing
-/// format.
+/// Encode dictionary indices using Parquet’s hybrid RLE/bit-packing format - appends to `out`.
 ///
-/// * Pads values to a multiple of 8 and bytes to a full byte
-/// so Arrow/Parquet readers never read past the buffer.
-/// * `out` is appended to – caller may reuse a buffer.
-///
-/// Returns `IoError::Format` if any index does not fit in 32 bits.
+/// Pads value runs to groups of 8 for bit-packing and byte-aligns the output so readers
+/// never over-read. Returns `IoError::Format` if an index exceeds 32-bit range.
 pub fn encode_dictionary_indices_rle(indices: &[u32], out: &mut Vec<u8>) -> Result<(), IoError> {
     if indices.is_empty() {
         out.push(0);
