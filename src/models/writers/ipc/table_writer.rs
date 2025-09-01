@@ -304,11 +304,12 @@ mod tests {
         let file = File::create(&path).await.unwrap();
         let schema = make_schema();
         let mut writer = TableWriter::with_compression(
-            file, 
-            schema.clone(), 
-            IPCMessageProtocol::File, 
-            Compression::None
-        ).unwrap();
+            file,
+            schema.clone(),
+            IPCMessageProtocol::File,
+            Compression::None,
+        )
+        .unwrap();
         writer.register_dictionary(0, dict_strs());
 
         let tbl = make_table();
@@ -332,11 +333,12 @@ mod tests {
         let file = File::create(&path).await.unwrap();
         let schema = make_schema();
         let mut writer = TableWriter::with_compression(
-            file, 
-            schema.clone(), 
-            IPCMessageProtocol::File, 
-            Compression::Snappy
-        ).unwrap();
+            file,
+            schema.clone(),
+            IPCMessageProtocol::File,
+            Compression::Snappy,
+        )
+        .unwrap();
         writer.register_dictionary(0, dict_strs());
 
         let tbl = make_table();
@@ -349,7 +351,7 @@ mod tests {
         assert!(!buf.is_empty());
         assert!(buf.starts_with(b"ARROW1\0\0"));
         assert!(buf.ends_with(b"ARROW1"));
-        
+
         // For compressed files, we expect the content to be different from uncompressed
         // but still valid Arrow format
         println!("Snappy compressed file size: {} bytes", buf.len());
@@ -364,11 +366,12 @@ mod tests {
         let file = File::create(&path).await.unwrap();
         let schema = make_schema();
         let mut writer = TableWriter::with_compression(
-            file, 
-            schema.clone(), 
-            IPCMessageProtocol::File, 
-            Compression::Zstd
-        ).unwrap();
+            file,
+            schema.clone(),
+            IPCMessageProtocol::File,
+            Compression::Zstd,
+        )
+        .unwrap();
         writer.register_dictionary(0, dict_strs());
 
         let tbl = make_table();
@@ -381,7 +384,7 @@ mod tests {
         assert!(!buf.is_empty());
         assert!(buf.starts_with(b"ARROW1\0\0"));
         assert!(buf.ends_with(b"ARROW1"));
-        
+
         // For compressed files, we expect the content to be different from uncompressed
         // but still valid Arrow format
         println!("Zstd compressed file size: {} bytes", buf.len());
@@ -402,7 +405,8 @@ mod tests {
         // Write with regular constructor
         {
             let file = File::create(&path1).await.unwrap();
-            let mut writer = TableWriter::new(file, schema.clone(), IPCMessageProtocol::File).unwrap();
+            let mut writer =
+                TableWriter::new(file, schema.clone(), IPCMessageProtocol::File).unwrap();
             writer.register_dictionary(0, dict_strs());
             writer.write_all_tables(vec![tbl.clone()]).await.unwrap();
         }
@@ -411,11 +415,12 @@ mod tests {
         {
             let file = File::create(&path2).await.unwrap();
             let mut writer = TableWriter::with_compression(
-                file, 
-                schema.clone(), 
-                IPCMessageProtocol::File, 
-                Compression::None
-            ).unwrap();
+                file,
+                schema.clone(),
+                IPCMessageProtocol::File,
+                Compression::None,
+            )
+            .unwrap();
             writer.register_dictionary(0, dict_strs());
             writer.write_all_tables(vec![tbl]).await.unwrap();
         }
@@ -423,15 +428,25 @@ mod tests {
         // Read both files and compare
         let mut buf1 = Vec::new();
         let mut buf2 = Vec::new();
-        File::open(&path1).await.unwrap().read_to_end(&mut buf1).await.unwrap();
-        File::open(&path2).await.unwrap().read_to_end(&mut buf2).await.unwrap();
+        File::open(&path1)
+            .await
+            .unwrap()
+            .read_to_end(&mut buf1)
+            .await
+            .unwrap();
+        File::open(&path2)
+            .await
+            .unwrap()
+            .read_to_end(&mut buf2)
+            .await
+            .unwrap();
 
         // Both should be valid Arrow files
         assert!(!buf1.is_empty());
         assert!(!buf2.is_empty());
         assert!(buf1.starts_with(b"ARROW1\0\0"));
         assert!(buf2.starts_with(b"ARROW1\0\0"));
-        
+
         // Content should be identical since both are uncompressed
         assert_eq!(buf1, buf2);
     }

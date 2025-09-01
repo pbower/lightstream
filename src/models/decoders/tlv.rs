@@ -1,3 +1,16 @@
+//! # TLV Frame Decoder
+//!
+//! Provides a [`FrameDecoder`] implementation for Type-Length-Value (TLV) encoded frames.
+//!
+//! ## Format
+//! - **Type**: 1 byte (`u8`)
+//! - **Length**: 4 bytes, little-endian (`u32`)
+//! - **Value**: N bytes of payload, as specified by the length field
+//!
+//! Example frame layout: `[type][length][value...]`
+//!
+//! Produces [`TLVDecodedFrame`] instances for downstream consumers.
+
 use std::convert::TryInto;
 use std::io;
 
@@ -9,16 +22,17 @@ use crate::traits::stream_buffer::StreamBuffer;
 /// Decoder for Type-Length-Value (TLV) frames.
 ///
 /// Format:
-/// - 1 byte: type field (u8)
-/// - 4 bytes: little-endian length prefix (u32)
-/// - N bytes: value/payload (length as specified)
+/// - 1 byte: type field (`u8`)
+/// - 4 bytes: little-endian length prefix (`u32`)
+/// - N bytes: value/payload (`length` as specified)
 ///
-/// Example: [type][length][value...]
+/// Example: `[type][length][value...]`
 pub struct TLVDecoder<B: StreamBuffer> {
     _phantom: std::marker::PhantomData<B>,
 }
 
 impl<B: StreamBuffer> TLVDecoder<B> {
+    /// Create a new TLV decoder instance.
     pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData,
@@ -29,6 +43,12 @@ impl<B: StreamBuffer> TLVDecoder<B> {
 impl<B: StreamBuffer> FrameDecoder for TLVDecoder<B> {
     type Frame = TLVDecodedFrame<B>;
 
+    /// Attempt to decode a TLV frame from the buffer.
+    ///
+    /// Returns:
+    /// - [`DecodeResult::Frame`] if a complete frame was found.
+    /// - [`DecodeResult::NeedMore`] if additional bytes are required.
+    /// - `Err` if the buffer is malformed.
     fn decode(&mut self, buf: &[u8]) -> io::Result<DecodeResult<Self::Frame>> {
         // At least 1 (type) + 4 (len)
         if buf.len() < 5 {

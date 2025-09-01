@@ -40,7 +40,8 @@ fn snappy_compress(input: &[u8]) -> Result<Vec<u8>, IoError> {
     let mut encoder = Encoder::new();
     let max_len = max_compress_len(input.len());
     let mut out = vec![0u8; max_len];
-    let compressed_len = encoder.compress(input, &mut out)
+    let compressed_len = encoder
+        .compress(input, &mut out)
         .map_err(|e| IoError::Compression(format!("Snappy compression failed: {:?}", e)))?;
     out.truncate(compressed_len);
     Ok(out)

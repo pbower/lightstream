@@ -9,7 +9,7 @@
 //! - **Zero-cost abstraction:** Pure trait alias pattern; no boxing, no dyn dispatch.
 //! - **SIMD alignment** Foundational `ByteStream64` for 64-byte aligned
 //!   buffers read and written via `minarrow::Vec64<u8>`. This helps to avoid additional
-//!   re-allocations when the target is shortest path to SIMD-ready buffers. 
+//!   re-allocations when the target is shortest path to SIMD-ready buffers.
 //!
 //! ## Notes
 //! - All traits require `Send + Unpin` to ensure compatibility with common async
@@ -17,7 +17,7 @@
 //! - Backpressure semantics are inherited from the underlying `Stream`
 //!   implementation.
 //!
-//! The module provides **trait bounds** as low-level foundational primitive. 
+//! The module provides **trait bounds** as low-level foundational primitive.
 //! Concrete stream implementations are supplied by callers (e.g. file/network sources,
 //! framed transports, or in-memory producers).
 

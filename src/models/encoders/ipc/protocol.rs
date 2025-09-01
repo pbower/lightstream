@@ -1,3 +1,11 @@
+//! # Arrow IPC Frame Encoder
+//!
+//! Encodes Arrow IPC messages and bodies into file or stream frames, handling
+//! continuation markers, padding, alignment, and optional file footers.
+//!
+//! Consistent with the official [Apache Arrow IPC specification](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc).
+//! This module performs no allocation beyond the chosen `StreamBuffer` and writes within the provided buffer.
+
 use std::io;
 
 use crate::constants::{
@@ -10,35 +18,47 @@ use crate::traits::frame_encoder::FrameEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
 use crate::utils::align_to;
 
+/// IPC frame inputs used by [`IPCFrameEncoder`].
 pub struct IPCFrame<'a> {
+    /// Flatbuffer message bytes - Arrow `Message`.
     pub meta: &'a [u8],
+    /// Optional message body payload.
     pub body: &'a [u8],
+    /// IPC protocol -  file (bounded) or stream (unbounded).
     pub protocol: IPCMessageProtocol,
+    /// Whether this is the first frame (emits opening magic in file mode).
     pub is_first: bool,
+    /// Whether this is the last frame (emits EOS, and footer+closing magic in file mode).
     pub is_last: bool,
+    /// File footer bytes (required when `protocol == File` and `is_last == true`).
     pub footer_bytes: Option<&'a [u8]>,
 }
 
-/// Encodes a message+body as a valid Arrow IPC frame, for file or stream.
+/// Encodes a message + body as a valid Arrow IPC frame (file or stream).
 ///
 /// See the [Arrow Columnar IPC Specification](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc)
-/// from the official (*but unaffiliated with `Minarrow`*) *Apache* website for further details.
+/// for the canonical layout.
 pub struct IPCFrameEncoder;
 
 impl FrameEncoder for IPCFrameEncoder {
     type Frame<'a> = IPCFrame<'a>;
     type Metadata = IPCFrameMetadata;
 
-    /// Encode a single frame.
-    /// For Stream, it always emits 8-byte continuation marker.
-    /// For File, it emits magic at the start, and optionally file footer+magic at end.
+    /// Encode a single frame into the chosen [`StreamBuffer`], returning buffer and metadata.
     ///
-    /// Arrow Spec:
-    /// <continuation: 0xFFFFFFFF>
+    /// Behaviour:
+    /// - **Stream**: always emits the 8-byte continuation marker (`0xFFFF_FFFF`, then metadata size).
+    /// - **File**: emits opening magic on the first frame, and on the last frame emits EOS,
+    ///   the file footer bytes + footer length (u32 LE), then the closing magic.
+    ///
+    /// Arrow framing layout:
+    /// ```text
+    /// <continuation: 0xFFFF_FFFF>
     /// <metadata_size: int32>
     /// <metadata_flatbuffer: bytes>
     /// <padding>
     /// <message body>
+    /// ```
     fn encode<'a, B: StreamBuffer>(
         global_offset: &mut usize,
         frame: &Self::Frame<'a>,
@@ -52,7 +72,7 @@ impl FrameEncoder for IPCFrameEncoder {
             *global_offset += ipc_frame_metadata.magic_len;
         }
 
-        // Make sure it's not a last EOS marker, or a no-op
+        // Skip emitting an empty message+body unless it is the terminal EOS case handled below.
         let write_msg_frame = !frame.meta.is_empty() || !frame.body.is_empty();
         if write_msg_frame {
             Self::append_message_frame(
@@ -65,7 +85,7 @@ impl FrameEncoder for IPCFrameEncoder {
         };
 
         if frame.protocol == IPCMessageProtocol::File && frame.is_last {
-            // The IPC spec notes that the end of stream marker also applies to the File format
+            // The spec allows using the EOS marker in file mode prior to writing footer + magic.
             Self::append_eos_marker(global_offset, &mut out, &mut ipc_frame_metadata);
             Self::append_file_footer(
                 global_offset,
@@ -77,7 +97,7 @@ impl FrameEncoder for IPCFrameEncoder {
             );
             ipc_frame_metadata.footer_len = frame
                 .footer_bytes
-                .expect("Expected footer byte for last message")
+                .expect("Expected footer bytes for last message")
                 .len();
         }
         if frame.protocol == IPCMessageProtocol::Stream && frame.is_last {
@@ -88,8 +108,9 @@ impl FrameEncoder for IPCFrameEncoder {
 }
 
 impl IPCFrameEncoder {
-    /// Appends the Arrow file footer to the given output buffer, including
-    /// the length prefix and final magic string, ensuring correct 8-byte alignment.
+    /// Append the Arrow file footer + footer length (LE u32) + closing magic.
+    ///
+    /// Updates `global_offset` and records lengths in `ipc_frame_meta`.
     pub fn append_file_footer<B: StreamBuffer>(
         global_offset: &mut usize,
         out: &mut B,
@@ -98,16 +119,19 @@ impl IPCFrameEncoder {
     ) {
         out.extend_from_slice(footer_bytes);
         *global_offset += footer_bytes.len();
+
         out.extend_from_slice(&(footer_bytes.len() as u32).to_le_bytes());
         *global_offset += 4;
+
         ipc_frame_meta.footer_len = out.len();
+
+        // Closing magic (unpadded).
         out.extend_from_slice(ARROW_MAGIC_NUMBER);
-        // The closing magic isn't padded
         ipc_frame_meta.magic_len = ARROW_MAGIC_NUMBER.len();
         *global_offset += ipc_frame_meta.magic_len;
     }
 
-    /// Append the end-of-stream marker: 0xFFFFFFFF followed by 0x00000000
+    /// Append the end-of-stream marker: `0xFFFF_FFFF` followed by `0x00000000`.
     fn append_eos_marker<B: StreamBuffer>(
         global_offset: &mut usize,
         out: &mut B,
@@ -119,7 +143,7 @@ impl IPCFrameEncoder {
         *global_offset += EOS_MARKER_LEN;
     }
 
-    /// Append a single Arrow IPC frame to `out`.
+    /// Append a single Arrow IPC message frame to `out`, including padding for alignment.
     fn append_message_frame<B: StreamBuffer>(
         global_offset: &mut usize,
         out: &mut B,
@@ -127,62 +151,53 @@ impl IPCFrameEncoder {
         body: &[u8],
         ipc_frame_meta: &mut IPCFrameMetadata,
     ) {
-        // Calculate all pads and total size so we can reserve once
-        ipc_frame_meta.header_len = CONTINUATION_MARKER_LEN + METADATA_SIZE_PREFIX; // bytes (continuation u32 + metadata_size u32)
+        // Header length - continuation (u32) + metadata_size (u32).
+        ipc_frame_meta.header_len = CONTINUATION_MARKER_LEN + METADATA_SIZE_PREFIX;
         ipc_frame_meta.meta_len = meta.len();
         ipc_frame_meta.body_len = body.len();
 
-        // Ensure capacity upfront to avoid lots of reallocations
+        // Ensure capacity upfront to avoid repeated reallocations.
         out.reserve(ipc_frame_meta.frame_len());
 
-        // Continuation marker (sentinel) - 4 bytes
+        // Sentinel continuation marker
         let cont_marker = &0xFFFF_FFFFu32.to_le_bytes();
         out.extend_from_slice(cont_marker);
         *global_offset += 4;
-        //debug_println!("Continuation marker :\n{:?}", cont_marker);
 
-        // We pad the metadata based on the whole stream length to date. This is help
-        // ensure that the data buffer is correctly aligned, particularly for 64-byte
-        // StreamBuffers.
+        // Pad metadata as per the supplied buffer `ALIGN`.
+        // Padding is computed against the running `global_offset`.
+        // This is at minimum for compliance with the Arrow spec (`8-bytes`) or `64-bytes` for *SIMD*.
         ipc_frame_meta.meta_pad = align_to::<B>(*global_offset as usize + 4 + meta.len());
 
-        // Metadata size - 4 bytes
+        // Metadata size, including any padding
         let metadata_size =
             &(ipc_frame_meta.meta_len as u32 + ipc_frame_meta.meta_pad as u32).to_le_bytes();
         out.extend_from_slice(metadata_size);
         *global_offset += 4;
-        //debug_println!("Metadata size :\n{:?}", metadata_size);
 
-        // Message metadata
+        // Message metadata.
         out.extend_from_slice(meta);
-        //debug_println!("Msg:\n{:?}", meta.as_ref());
-        //debug_println!("Msg_len:\n{:?}", meta.len());
         *global_offset += meta.len();
 
-        // Pad metadata
+        // Pad metadata, if required.
         if ipc_frame_meta.meta_pad != 0 {
             out.extend_from_slice(&vec![0u8; ipc_frame_meta.meta_pad]);
-            //debug_println!("Pad:\n{:?}", &vec![0u8; ipc_frame_meta.meta_pad]);
             *global_offset += ipc_frame_meta.meta_pad;
         }
 
-        // Message body
+        // Message body.
         out.extend_from_slice(body);
-        //debug_println!("Body:\n{:?}", body);
-        //debug_println!("Body len:\n{:?}", body.len());
         *global_offset += body.len();
 
-        // This should not need to do anything because of `push_buffer` which
-        // pads the individual body buffers, but is here for completeness.
+        // Body pad - usually zero due to per-buffer padding upstream, but here for completeness
         ipc_frame_meta.body_pad = align_to::<B>(*global_offset);
-
         if ipc_frame_meta.body_pad != 0 {
             out.extend_from_slice(&vec![0u8; ipc_frame_meta.body_pad]);
-            //debug_println!("Body_pad:\n{:?}", &vec![0u8; ipc_frame_meta.body_pad]);
             *global_offset += ipc_frame_meta.body_pad;
         }
     }
 }
+
 
 #[cfg(test)]
 mod tests {

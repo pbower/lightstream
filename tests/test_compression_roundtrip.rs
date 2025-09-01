@@ -9,19 +9,19 @@ use tokio::fs::File;
 
 use lightstream_io::compression::Compression;
 use lightstream_io::enums::IPCMessageProtocol;
-use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 use lightstream_io::models::readers::ipc::file_table_reader::FileTableReader;
+use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 
 use minarrow::ffi::arrow_dtype::ArrowType;
 use minarrow::{
-    Array, Field, FieldArray, NumericArray, Table, Vec64, Buffer, 
-    IntegerArray, FloatArray, BooleanArray, StringArray, TextArray
+    Array, BooleanArray, Buffer, Field, FieldArray, FloatArray, IntegerArray, NumericArray,
+    StringArray, Table, TextArray, Vec64,
 };
 
 /// Create a comprehensive test table with multiple data types
 fn create_test_table() -> (Table, Vec<Field>) {
     let n_rows = 1000;
-    
+
     // Integer column
     let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64 * 2).collect();
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
@@ -61,9 +61,10 @@ fn create_test_table() -> (Table, Vec<Field>) {
     // String column
     let string_data: Vec<String> = (0..n_rows).map(|i| format!("test_string_{}", i)).collect();
     let string_refs: Vec<&str> = string_data.iter().map(|s| s.as_str()).collect();
-    let string_array = Array::TextArray(TextArray::String32(Arc::new(
-        StringArray::from_vec(string_refs, None)
-    )));
+    let string_array = Array::TextArray(TextArray::String32(Arc::new(StringArray::from_vec(
+        string_refs,
+        None,
+    ))));
     let string_field = Field {
         name: "text".into(),
         dtype: ArrowType::String,
@@ -73,11 +74,11 @@ fn create_test_table() -> (Table, Vec<Field>) {
 
     let schema = vec![
         int_field.clone(),
-        float_field.clone(), 
+        float_field.clone(),
         bool_field.clone(),
         string_field.clone(),
     ];
-    
+
     let table = Table {
         name: "compression_roundtrip_test".to_string(),
         n_rows,
@@ -106,38 +107,70 @@ fn read_all_tables(reader: &FileTableReader) -> std::io::Result<Vec<Table>> {
 fn verify_tables_equal(original: &Table, roundtrip: &Table) {
     // Note: Table names are not preserved in Arrow IPC format, so we don't check names
     assert_eq!(original.n_rows, roundtrip.n_rows, "Row counts should match");
-    assert_eq!(original.cols.len(), roundtrip.cols.len(), "Column counts should match");
-    
+    assert_eq!(
+        original.cols.len(),
+        roundtrip.cols.len(),
+        "Column counts should match"
+    );
+
     for (i, (orig_col, rt_col)) in original.cols.iter().zip(roundtrip.cols.iter()).enumerate() {
-        assert_eq!(orig_col.field.name, rt_col.field.name, "Column {} name should match", i);
-        assert_eq!(orig_col.field.dtype, rt_col.field.dtype, "Column {} type should match", i);
-        assert_eq!(orig_col.field.nullable, rt_col.field.nullable, "Column {} nullable should match", i);
-        
+        assert_eq!(
+            orig_col.field.name, rt_col.field.name,
+            "Column {} name should match",
+            i
+        );
+        assert_eq!(
+            orig_col.field.dtype, rt_col.field.dtype,
+            "Column {} type should match",
+            i
+        );
+        assert_eq!(
+            orig_col.field.nullable, rt_col.field.nullable,
+            "Column {} nullable should match",
+            i
+        );
+
         // For detailed data verification, we'd need to implement array comparison
         // For now, we verify structural equality which catches most compression issues
         match (&orig_col.array, &rt_col.array) {
-            (Array::NumericArray(orig), Array::NumericArray(rt)) => {
-                match (orig, rt) {
-                    (NumericArray::Int64(orig_arr), NumericArray::Int64(rt_arr)) => {
-                        assert_eq!(orig_arr.data.len(), rt_arr.data.len(), "Int64 column {} data length should match", i);
-                    }
-                    (NumericArray::Float64(orig_arr), NumericArray::Float64(rt_arr)) => {
-                        assert_eq!(orig_arr.data.len(), rt_arr.data.len(), "Float64 column {} data length should match", i);
-                    }
-                    _ => panic!("Numeric array types should match for column {}", i),
+            (Array::NumericArray(orig), Array::NumericArray(rt)) => match (orig, rt) {
+                (NumericArray::Int64(orig_arr), NumericArray::Int64(rt_arr)) => {
+                    assert_eq!(
+                        orig_arr.data.len(),
+                        rt_arr.data.len(),
+                        "Int64 column {} data length should match",
+                        i
+                    );
                 }
-            }
+                (NumericArray::Float64(orig_arr), NumericArray::Float64(rt_arr)) => {
+                    assert_eq!(
+                        orig_arr.data.len(),
+                        rt_arr.data.len(),
+                        "Float64 column {} data length should match",
+                        i
+                    );
+                }
+                _ => panic!("Numeric array types should match for column {}", i),
+            },
             (Array::BooleanArray(orig), Array::BooleanArray(rt)) => {
-                assert_eq!(orig.len(), rt.len(), "Boolean column {} length should match", i);
+                assert_eq!(
+                    orig.len(),
+                    rt.len(),
+                    "Boolean column {} length should match",
+                    i
+                );
             }
-            (Array::TextArray(orig), Array::TextArray(rt)) => {
-                match (orig, rt) {
-                    (TextArray::String32(orig_arr), TextArray::String32(rt_arr)) => {
-                        assert_eq!(orig_arr.len(), rt_arr.len(), "String column {} length should match", i);
-                    }
-                    _ => panic!("Text array types should match for column {}", i),
+            (Array::TextArray(orig), Array::TextArray(rt)) => match (orig, rt) {
+                (TextArray::String32(orig_arr), TextArray::String32(rt_arr)) => {
+                    assert_eq!(
+                        orig_arr.len(),
+                        rt_arr.len(),
+                        "String column {} length should match",
+                        i
+                    );
                 }
-            }
+                _ => panic!("Text array types should match for column {}", i),
+            },
             _ => panic!("Array types should match for column {}", i),
         }
     }
@@ -146,9 +179,9 @@ fn verify_tables_equal(original: &Table, roundtrip: &Table) {
 async fn write_and_read_roundtrip(compression: Compression) -> (Table, Table) {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     let (original_table, schema) = create_test_table();
-    
+
     // Write with compression
     {
         let file = File::create(file_path).await.unwrap();
@@ -156,18 +189,22 @@ async fn write_and_read_roundtrip(compression: Compression) -> (Table, Table) {
             file,
             schema.clone(),
             IPCMessageProtocol::File,
-            compression
-        ).unwrap();
-        writer.write_all_tables(vec![original_table.clone()]).await.unwrap();
+            compression,
+        )
+        .unwrap();
+        writer
+            .write_all_tables(vec![original_table.clone()])
+            .await
+            .unwrap();
     }
-    
+
     // Read back
     let reader = FileTableReader::open(file_path).unwrap();
     let tables = read_all_tables(&reader).unwrap();
-    
+
     assert_eq!(tables.len(), 1, "Should read back exactly one table");
     let roundtrip_table = tables.into_iter().next().unwrap();
-    
+
     (original_table, roundtrip_table)
 }
 
@@ -198,13 +235,13 @@ async fn test_zstd_compression_roundtrip() {
 async fn test_compression_multiple_tables_roundtrip() {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     let (table1, schema) = create_test_table();
     let (mut table2, _) = create_test_table();
     table2.name = "second_table".to_string();
-    
+
     let original_tables = vec![table1, table2];
-    
+
     // Write with compression
     {
         let file = File::create(file_path).await.unwrap();
@@ -212,34 +249,46 @@ async fn test_compression_multiple_tables_roundtrip() {
             file,
             schema.clone(),
             IPCMessageProtocol::File,
-            Compression::None
-        ).unwrap();
-        writer.write_all_tables(original_tables.clone()).await.unwrap();
+            Compression::None,
+        )
+        .unwrap();
+        writer
+            .write_all_tables(original_tables.clone())
+            .await
+            .unwrap();
     }
-    
+
     // Read back
     let reader = FileTableReader::open(file_path).unwrap();
     let roundtrip_tables = read_all_tables(&reader).unwrap();
-    
-    assert_eq!(roundtrip_tables.len(), 2, "Should read back exactly two tables");
-    
-    for (i, (orig, rt)) in original_tables.iter().zip(roundtrip_tables.iter()).enumerate() {
+
+    assert_eq!(
+        roundtrip_tables.len(),
+        2,
+        "Should read back exactly two tables"
+    );
+
+    for (i, (orig, rt)) in original_tables
+        .iter()
+        .zip(roundtrip_tables.iter())
+        .enumerate()
+    {
         verify_tables_equal(orig, rt);
         println!("✓ Table {} roundtrip verified", i + 1);
     }
-    
+
     println!("✓ Multiple tables compression roundtrip test passed");
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_compression_large_table_roundtrip() {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     // Create a larger table to better test compression effectiveness
     let n_rows = 10000;
     let int_data: Vec64<i64> = (0..n_rows).map(|i| (i % 100) as i64).collect(); // Repetitive data for better compression
-    
+
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
         data: Buffer::from(int_data),
         null_mask: None,
@@ -257,7 +306,7 @@ async fn test_compression_large_table_roundtrip() {
         n_rows,
         cols: vec![FieldArray::new(int_field, int_array)],
     };
-    
+
     // Test with compression that should be effective on repetitive data
     {
         let file = File::create(file_path).await.unwrap();
@@ -265,18 +314,22 @@ async fn test_compression_large_table_roundtrip() {
             file,
             schema.clone(),
             IPCMessageProtocol::File,
-            Compression::None  // Start with None, can test others with features enabled
-        ).unwrap();
-        writer.write_all_tables(vec![original_table.clone()]).await.unwrap();
+            Compression::None, // Start with None, can test others with features enabled
+        )
+        .unwrap();
+        writer
+            .write_all_tables(vec![original_table.clone()])
+            .await
+            .unwrap();
     }
-    
+
     // Read back
     let reader = FileTableReader::open(file_path).unwrap();
     let tables = read_all_tables(&reader).unwrap();
-    
+
     assert_eq!(tables.len(), 1, "Should read back exactly one table");
     let roundtrip_table = tables.into_iter().next().unwrap();
-    
+
     verify_tables_equal(&original_table, &roundtrip_table);
     println!("✓ Large table compression roundtrip test passed");
 }
@@ -285,9 +338,9 @@ async fn test_compression_large_table_roundtrip() {
 async fn test_stream_protocol_compression_roundtrip() {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     let (original_table, schema) = create_test_table();
-    
+
     // Write with Stream protocol and compression
     {
         let file = File::create(file_path).await.unwrap();
@@ -295,22 +348,30 @@ async fn test_stream_protocol_compression_roundtrip() {
             file,
             schema.clone(),
             IPCMessageProtocol::Stream,
-            Compression::None
-        ).unwrap();
-        writer.write_all_tables(vec![original_table.clone()]).await.unwrap();
+            Compression::None,
+        )
+        .unwrap();
+        writer
+            .write_all_tables(vec![original_table.clone()])
+            .await
+            .unwrap();
     }
-    
+
     // Note: Stream protocol files may need a different reader approach
     // For now, let's verify the file structure is correct
     let mut file = tokio::fs::File::open(file_path).await.unwrap();
     let mut buf = Vec::new();
     use tokio::io::AsyncReadExt;
     file.read_to_end(&mut buf).await.unwrap();
-    
+
     assert!(!buf.is_empty(), "File should not be empty");
     // Stream protocol starts with 0xFFFF_FFFF
-    assert_eq!(&buf[..4], &[0xFF, 0xFF, 0xFF, 0xFF], "Stream protocol magic should be present");
-    
+    assert_eq!(
+        &buf[..4],
+        &[0xFF, 0xFF, 0xFF, 0xFF],
+        "Stream protocol magic should be present"
+    );
+
     println!("✓ Stream protocol compression roundtrip structure test passed");
 }
 
@@ -318,12 +379,12 @@ async fn test_stream_protocol_compression_roundtrip() {
 async fn test_compression_data_integrity() {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     // Create a simple integer table where we can verify exact values
     let n_rows = 100;
     let expected_values: Vec<i64> = (0..n_rows).map(|i| i as i64 * 7).collect(); // Multiply by 7 for uniqueness
     let int_data: Vec64<i64> = Vec64::from_slice(&expected_values);
-    
+
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
         data: Buffer::from(int_data),
         null_mask: None,
@@ -341,7 +402,7 @@ async fn test_compression_data_integrity() {
         n_rows,
         cols: vec![FieldArray::new(int_field, int_array)],
     };
-    
+
     // Write with compression
     {
         let file = File::create(file_path).await.unwrap();
@@ -349,21 +410,25 @@ async fn test_compression_data_integrity() {
             file,
             schema.clone(),
             IPCMessageProtocol::File,
-            Compression::None
-        ).unwrap();
-        writer.write_all_tables(vec![original_table.clone()]).await.unwrap();
+            Compression::None,
+        )
+        .unwrap();
+        writer
+            .write_all_tables(vec![original_table.clone()])
+            .await
+            .unwrap();
     }
-    
+
     // Read back
     let reader = FileTableReader::open(file_path).unwrap();
     let tables = read_all_tables(&reader).unwrap();
-    
+
     assert_eq!(tables.len(), 1, "Should read back exactly one table");
     let roundtrip_table = tables.into_iter().next().unwrap();
-    
+
     // Verify structure
     verify_tables_equal(&original_table, &roundtrip_table);
-    
+
     // Verify data integrity: extract the actual values and compare
     if let Array::NumericArray(NumericArray::Int64(rt_arr)) = &roundtrip_table.cols[0].array {
         // Compare first few values to verify data integrity
@@ -372,15 +437,22 @@ async fn test_compression_data_integrity() {
             let actual = rt_arr.data[i];
             assert_eq!(actual, expected, "Value at index {} should match", i);
         }
-        
+
         // Verify total length matches
-        assert_eq!(rt_arr.data.len(), expected_values.len(), "Data length should match");
-        
-        println!("✓ First 10 values verified: {:?}", &rt_arr.data[..10].to_vec());
+        assert_eq!(
+            rt_arr.data.len(),
+            expected_values.len(),
+            "Data length should match"
+        );
+
+        println!(
+            "✓ First 10 values verified: {:?}",
+            &rt_arr.data[..10].to_vec()
+        );
         println!("✓ Expected first 10 values: {:?}", &expected_values[..10]);
     } else {
         panic!("Expected Int64 array in roundtrip table");
     }
-    
+
     println!("✓ Compression data integrity test passed");
 }

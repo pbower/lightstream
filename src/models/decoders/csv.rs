@@ -1,11 +1,15 @@
-//! CSV Decoder for Minarrow Tables/SuperTables.
-//! - Accepts CSV byte slice or any `BufRead`.
-//! - Infers schema or uses a provided schema (optional).
-//! - Full support for all Minarrow types: Int32, Int64, UInt32, UInt64, Float32, Float64, Boolean, String32, Categorical32.
-//! - Custom delimiter, nulls, quoting, and dictionary mapping for categoricals.
-//! - Decodes to Table (single batch) or vector of Tables (chunked).
+//! # CSV Decoder for Minarrow Tables
 //!
-//! No external dependencies.
+//! - Accepts a CSV byte slice or any [`BufRead`].
+//! - Infers schema or uses a provided schema (optional).
+//! - Supports: `Int32`, `Int64`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Boolean`, `String32`, `Categorical32`.
+//! - Custom delimiter, nulls, quoting, and dictionary mapping for categoricals.
+//! - Produces a single [`Table`] via [`decode_csv`], or multiple batches via repeated calls to [`decode_csv_batch`].
+//! - No external dependencies.
+//!
+//! Notes:
+//! - Input is treated as UTF-8; invalid byte sequences are lossily decoded via `String::from_utf8_lossy`.
+//! - See [`CsvDecodeOptions`] for configurable delimiter, quoting, header handling, and schema control.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Cursor};
@@ -569,7 +573,7 @@ mod tests {
             _ => panic!("wrong type"),
         }
 
-        // Nulls: strings column has values ["hello", "", "world", "rust"] where "" is null
+        // Nulls - strings column has values ["hello", "", "world", "rust"] where "" is null
         // So 3 valid values, 1 null → count_ones() should be 3
         match &table.cols[1].array {
             Array::TextArray(TextArray::String32(arr)) => {

@@ -1,3 +1,16 @@
+//! # Arrow IPC Table Stream Decoder
+//!
+//! Asynchronous readers that consume framed Arrow IPC byte streams and yield `minarrow::Table`
+//! values. Handles schema, dictionary batches, and record batches with protocol-aware state.
+//!
+//! - Supports both IPC protocols: file and stream ([`IPCMessageProtocol`]).
+//! - Works with standard 8-byte buffers (`Vec<u8>`) and 64-byte SIMD-aligned buffers (`Vec64<u8>`).
+//! - Public aliases: [`TableStreamDecoder`] (8-byte) and [`TableStreamDecoder64`] (64-byte).
+//!
+//! Internally wraps a [`FramedByteStream`] with an [`ArrowIPCFrameDecoder`] and manages batch
+//! state, fields, and dictionaries. Implements `futures_core::Stream` and yields complete [`Table`]
+//! values.
+
 use std::collections::HashMap;
 use std::io;
 use std::pin::Pin;

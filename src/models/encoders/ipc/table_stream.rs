@@ -1,3 +1,21 @@
+//! # Arrow IPC Table Stream Encoder
+//!
+//! Streaming Arrow IPC writer that serialises `Table` values into Arrow-compliant IPC frames.
+//!
+//! This module includes low-level, pull-based frame emission via [`GTableStreamEncoder`] with two
+//! default type aliases for common buffer types:
+//!
+//! - [`TableStreamEncoder`] (uses `Vec<u8>` buffer)
+//! - [`TableStreamEncoder64`] (uses SIMD-aligned `Vec64<u8>` buffer)
+//!
+//! It supports both Arrow IPC *Stream* and *File* protocols, optional compression, and dictionary
+//! encoding for categorical columns. The encoder yields frames one-by-one via `poll_next`, so it 
+//! slots into futures, backpressure-aware and asynchronous situation (e.g, Tokio).
+//!
+//! For most use cases, prefer higher-level abstractions like `TableWriter`.  
+//! Use this module when you require fine-grained control over IPC frame emission,  
+//! need to integrate with custom IO layers, or are building your own low-level pipeline.
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::pin::Pin;
@@ -140,7 +158,11 @@ where
     ///
     /// # Returns
     /// New streaming writer in [`WriterState::Fresh`] state.
-    pub fn with_compression(schema: Vec<Field>, protocol: IPCMessageProtocol, compression: Compression) -> Self {
+    pub fn with_compression(
+        schema: Vec<Field>,
+        protocol: IPCMessageProtocol,
+        compression: Compression,
+    ) -> Self {
         Self {
             protocol,
             state: WriterState::Fresh,
@@ -820,11 +842,11 @@ fn push_buffer_with_compression<B: StreamBuffer>(
     // Compress the buffer data
     let compressed = compress(bytes, compression)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Compression failed: {}", e)))?;
-    
+
     // Write 8-byte uncompressed length header (little-endian)
     let uncompressed_len_bytes = (original_len as u64).to_le_bytes();
     body.extend_from_slice(&uncompressed_len_bytes);
-    
+
     // Write compressed data in chunks to avoid blocking
     const CHUNK_SIZE: usize = 1024 * 1024; // 1MB chunks
     if compressed.len() > CHUNK_SIZE {
@@ -834,7 +856,7 @@ fn push_buffer_with_compression<B: StreamBuffer>(
     } else {
         body.extend_from_slice(&compressed);
     }
-    
+
     // Calculate padding for the total written length (header + compressed data)
     let total_written = 8 + compressed.len();
     let pad = align_to::<B>(total_written);

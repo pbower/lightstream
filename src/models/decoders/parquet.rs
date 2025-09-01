@@ -1,13 +1,18 @@
-//! Parquet Decoding helpers
+//! Decoders for plain and dictionary-encoded Parquet column values.
+//!
+//! Supports all Minarrow-compatible types including numeric, boolean, float,
+//! UTF-8 string, large string (optional), and dictionary index decoding.
+//!
+//! Provides low-level decoding utilities for Parquet-encoded buffers,
+//! used internally by higher-level Table or Array readers.
 
 use std::io::Read;
-
 use minarrow::Vec64;
-
 use crate::error::IoError;
 
 // Primitive decoders
 
+/// Decode a plain `INT32` buffer into a `Vec64<i32>`.
 pub fn decode_int32_plain(buf: &[u8]) -> Result<Vec64<i32>, IoError> {
     if buf.len() % 4 != 0 {
         return Err(IoError::Format(
@@ -20,6 +25,7 @@ pub fn decode_int32_plain(buf: &[u8]) -> Result<Vec64<i32>, IoError> {
         .collect())
 }
 
+/// Decode a plain `INT64` buffer into a `Vec64<i64>`.
 pub fn decode_int64_plain(buf: &[u8]) -> Result<Vec64<i64>, IoError> {
     if buf.len() % 8 != 0 {
         return Err(IoError::Format(
@@ -32,6 +38,7 @@ pub fn decode_int64_plain(buf: &[u8]) -> Result<Vec64<i64>, IoError> {
         .collect())
 }
 
+/// Decode a plain `UINT32` buffer into a `Vec64<u32>`.
 pub fn decode_uint32_as_int32_plain(buf: &[u8]) -> Result<Vec64<u32>, IoError> {
     if buf.len() % 4 != 0 {
         return Err(IoError::Format("buffer len % 4 != 0".into()));
@@ -42,11 +49,13 @@ pub fn decode_uint32_as_int32_plain(buf: &[u8]) -> Result<Vec64<u32>, IoError> {
         .collect())
 }
 
+/// Decode a plain `UINT8` buffer into a `Vec64<u8>`.
 #[cfg(feature = "extended_numeric_types")]
 pub fn decode_uint8_as_int32_plain(buf: &[u8]) -> Result<Vec64<u8>, IoError> {
     Ok(buf.iter().copied().collect())
 }
 
+/// Decode a plain `UINT16` buffer into a `Vec64<u16>`.
 #[cfg(feature = "extended_numeric_types")]
 pub fn decode_uint16_as_int32_plain(buf: &[u8]) -> Result<Vec64<u16>, IoError> {
     if buf.len() % 2 != 0 {
@@ -58,6 +67,7 @@ pub fn decode_uint16_as_int32_plain(buf: &[u8]) -> Result<Vec64<u16>, IoError> {
         .collect())
 }
 
+/// Decode a plain `UINT64` buffer into a `Vec64<u64>`.
 pub fn decode_uint64_as_int64_plain(buf: &[u8]) -> Result<Vec64<u64>, IoError> {
     if buf.len() % 8 != 0 {
         return Err(IoError::Format("buffer len % 8 != 0".into()));
@@ -68,6 +78,7 @@ pub fn decode_uint64_as_int64_plain(buf: &[u8]) -> Result<Vec64<u64>, IoError> {
         .collect())
 }
 
+/// Decode a plain `FLOAT32` buffer into a `Vec64<f32>`.
 pub fn decode_float32_plain(buf: &[u8]) -> Result<Vec64<f32>, IoError> {
     if buf.len() % 4 != 0 {
         return Err(IoError::Format(
@@ -80,6 +91,7 @@ pub fn decode_float32_plain(buf: &[u8]) -> Result<Vec64<f32>, IoError> {
         .collect())
 }
 
+/// Decode a plain `FLOAT64` buffer into a `Vec64<f64>`.
 pub fn decode_float64_plain(buf: &[u8]) -> Result<Vec64<f64>, IoError> {
     if buf.len() % 8 != 0 {
         return Err(IoError::Format(
@@ -94,6 +106,7 @@ pub fn decode_float64_plain(buf: &[u8]) -> Result<Vec64<f64>, IoError> {
 
 // UTF-8 strings
 
+/// Decode a plain string `BYTE_ARRAY` column into Arrow-style offsets and values.
 pub fn decode_string_plain(buf: &[u8], len: usize) -> Result<(Vec64<u32>, Vec64<u8>), IoError> {
     let mut offsets = Vec64::with_capacity(len + 1);
     offsets.push(0);
@@ -114,6 +127,7 @@ pub fn decode_string_plain(buf: &[u8], len: usize) -> Result<(Vec64<u32>, Vec64<
     Ok((offsets, values))
 }
 
+/// Decode a plain large_string `LARGE_BYTE_ARRAY` column into Arrow-style offsets and values.
 #[cfg(feature = "large_string")]
 pub fn decode_large_string_plain(
     buf: &[u8],
@@ -139,16 +153,20 @@ pub fn decode_large_string_plain(
 }
 
 // temporal aliases
+
+/// Decode a plain `DATE32`/`TIME32` buffer into a `Vec64<i32>`.
 pub fn decode_datetime32_plain(buf: &[u8]) -> Result<Vec64<i32>, IoError> {
     decode_int32_plain(buf)
 }
+
+/// Decode a plain `DATE64`/`TIME64` buffer into a `Vec64<i64>`.
 pub fn decode_datetime64_plain(buf: &[u8]) -> Result<Vec64<i64>, IoError> {
     decode_int64_plain(buf)
 }
 
 // Dictionary indices decoder
 
-/// Decode the RLE_DICTIONARY index stream.
+/// Decode the `RLE_DICTIONARY` index stream into a `Vec64<u32>`.
 ///
 /// * `len` – number of logical indices expected.
 pub fn decode_dictionary_indices_rle(buf: &[u8], len: usize) -> Result<Vec64<u32>, IoError> {

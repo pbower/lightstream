@@ -11,7 +11,7 @@ use lightstream_io::enums::IPCMessageProtocol;
 use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 
 use minarrow::ffi::arrow_dtype::ArrowType;
-use minarrow::{Array, Field, FieldArray, NumericArray, Table, Vec64, Buffer, IntegerArray};
+use minarrow::{Array, Buffer, Field, FieldArray, IntegerArray, NumericArray, Table, Vec64};
 use std::sync::Arc;
 
 /// Test that TableWriter::with_compression API exists and compiles
@@ -19,11 +19,11 @@ use std::sync::Arc;
 async fn test_compression_api_compilation() {
     let temp_file = NamedTempFile::new().unwrap();
     let file_path = temp_file.path();
-    
+
     // Create a simple test table
     let n_rows = 100;
     let int_data: Vec64<i64> = (0..n_rows).map(|i| i as i64).collect();
-    
+
     let int_array = Array::NumericArray(NumericArray::Int64(Arc::new(IntegerArray {
         data: Buffer::from(int_data),
         null_mask: None,
@@ -52,41 +52,44 @@ async fn test_compression_api_compilation() {
         writer.write_all_tables(vec![table.clone()]).await.unwrap();
     }
 
-    // Test compressed writer API 
+    // Test compressed writer API
     {
         let file = File::create(file_path).await.unwrap();
         let schema: Vec<Field> = table.cols.iter().map(|col| (*col.field).clone()).collect();
-        
+
         // Test each compression option compiles
         let _writer_none = TableWriter::with_compression(
-            file, 
-            schema.clone(), 
-            IPCMessageProtocol::File, 
-            Compression::None
-        ).unwrap();
+            file,
+            schema.clone(),
+            IPCMessageProtocol::File,
+            Compression::None,
+        )
+        .unwrap();
 
         #[cfg(feature = "snappy")]
         {
             let file = File::create(file_path).await.unwrap();
             let _writer_snappy = TableWriter::with_compression(
-                file, 
-                schema.clone(), 
-                IPCMessageProtocol::File, 
-                Compression::Snappy
-            ).unwrap();
+                file,
+                schema.clone(),
+                IPCMessageProtocol::File,
+                Compression::Snappy,
+            )
+            .unwrap();
         }
 
         #[cfg(feature = "zstd")]
         {
             let file = File::create(file_path).await.unwrap();
             let _writer_zstd = TableWriter::with_compression(
-                file, 
-                schema, 
-                IPCMessageProtocol::File, 
-                Compression::Zstd
-            ).unwrap();
+                file,
+                schema,
+                IPCMessageProtocol::File,
+                Compression::Zstd,
+            )
+            .unwrap();
         }
-        
+
         println!("✓ Compression APIs compile successfully");
         println!("✓ All compression codecs are accessible");
     }

@@ -1,9 +1,13 @@
-//! Internal module
+//! # IPC FlatBuffers Builders (internal)
 //!
-//! Contains the Flatbuffers serialisation methods that accompany
-//! the IPC Protocol as outlined [here](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc)
+//! Helpers that construct FlatBuffer-encoded Arrow IPC artefacts used by the encoder.
+//! This includes schema messages, record batches, dictionary batches, and the file footer with block metadata.
 //!
-//! These work with the modules under src/arrow/* compiled via src/flatb/* .
+//! Follows the IPC protocol as outlined
+//! [here](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc).
+//!
+//! Uses the generated FlatBuffers types under `src/arrow/*` (built from `src/flatb/*`).
+
 use std::io::{self};
 
 use minarrow::ffi::arrow_dtype::CategoricalIndexType;

@@ -69,7 +69,12 @@ where
         })
     }
 
-    pub fn with_compression(sink: W, schema: Vec<Field>, protocol: IPCMessageProtocol, compression: Compression) -> io::Result<Self> {
+    pub fn with_compression(
+        sink: W,
+        schema: Vec<Field>,
+        protocol: IPCMessageProtocol,
+        compression: Compression,
+    ) -> io::Result<Self> {
         Ok(Self {
             inner: GTableStreamEncoder::with_compression(schema.clone(), protocol, compression),
             schema,

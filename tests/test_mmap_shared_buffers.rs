@@ -9,10 +9,6 @@ use lightstream_io::models::readers::ipc::mmap_table_reader::MmapTableReader;
 #[cfg(feature = "mmap")]
 use lightstream_io::models::writers::ipc::table_writer::TableWriter;
 #[cfg(feature = "mmap")]
-use tempfile::NamedTempFile;
-#[cfg(feature = "mmap")]
-use tokio::fs::File;
-#[cfg(feature = "mmap")]
 use minarrow::ffi::arrow_dtype::ArrowType;
 #[cfg(feature = "mmap")]
 use minarrow::{
@@ -20,6 +16,10 @@ use minarrow::{
 };
 #[cfg(feature = "mmap")]
 use std::sync::Arc;
+#[cfg(feature = "mmap")]
+use tempfile::NamedTempFile;
+#[cfg(feature = "mmap")]
+use tokio::fs::File;
 
 /// Test that mmap-read arrays use SharedBuffer instead of owned buffers
 #[tokio::test]

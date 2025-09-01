@@ -12,17 +12,18 @@
 
 use std::sync::Arc;
 
-use minarrow::{
-    ffi::arrow_dtype::CategoricalIndexType, Array, ArrowType, Bitmask, Buffer, CategoricalArray,
-    Field, FieldArray, FloatArray, IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64,
-};
 use minarrow::BooleanArray;
+use minarrow::{
+    Array, ArrowType, Bitmask, Buffer, CategoricalArray, Field, FieldArray, FloatArray,
+    IntegerArray, NumericArray, StringArray, Table, TextArray, Vec64,
+    ffi::arrow_dtype::CategoricalIndexType,
+};
 use tempfile::NamedTempFile;
 
 #[cfg(feature = "datetime")]
 use minarrow::{DatetimeArray, TemporalArray, TimeUnit};
 
-use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
 
 use crate::{
     enums::IPCMessageProtocol,
@@ -214,7 +215,9 @@ pub(crate) fn dt64_col() -> FieldArray {
             metadata: Default::default(),
         },
         Array::TemporalArray(TemporalArray::Datetime64(Arc::new(DatetimeArray {
-            data: Buffer::from(Vec64::from_slice(&[1_111_111, 2_222_222, 3_333_333, 4_444_444])),
+            data: Buffer::from(Vec64::from_slice(&[
+                1_111_111, 2_222_222, 3_333_333, 4_444_444,
+            ])),
             null_mask: None,
             time_unit: TimeUnit::Days,
         }))),
