@@ -1,8 +1,7 @@
 //! Memory-mapped Arrow IPC file reader.
 //!
 //! # Overview
-//! Zero-copy reader for Arrow IPC files backed by a
-//! custom `mmap` wrapper. Parses the footer/schema, loads dictionaries, and
+//! Zero-copy reader for Arrow IPC files. Parses the footer/schema, loads dictionaries, and
 //! exposes batches as `Table` or aggregates as `SuperTable`.
 //!
 //! # Zero-Copy

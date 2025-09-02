@@ -139,13 +139,10 @@ fn verify_data(original: &Table, read_back: &Table) -> Result<(), Box<dyn std::e
         "Column count mismatch"
     );
 
-    // Check column names (CSV reader may infer field names from headers)
+    // Check column names
     for (orig_col, read_col) in original.cols.iter().zip(read_back.cols.iter()) {
         println!("Column: {} -> {}", orig_col.field.name, read_col.field.name);
     }
-
-    // Note: CSV format conversion may change data types (e.g., all values become strings)
-    // so we don't do strict type checking here, just structural verification
     println!("Data structure preserved through CSV round-trip");
 
     Ok(())

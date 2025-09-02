@@ -3,9 +3,9 @@
 //! This example demonstrates how to:
 //! - Use the generic TableReader for various data sources
 //! - Read all tables vs limited number of tables
-//! - Combine tables into SuperTable (preserving batches)
-//! - Combine tables into single Table (concatenated rows)
-//! - Handle different stream sources (disk, network, etc.)
+//! - Combine tables into SuperTable, preserving batches
+//! - Combine tables into single Table, concatenating rows
+//! - Handle different stream sources - disk, network, etc.
 
 use lightstream_io::enums::BufferChunkSize;
 use lightstream_io::enums::IPCMessageProtocol;

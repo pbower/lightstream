@@ -35,6 +35,7 @@ use crate::arrow::message::org::apache::arrow::flatbuf as fb;
 use crate::arrow::message::org::apache::arrow::flatbuf::{
     BodyCompression, Buffer, DictionaryBatch,
 };
+use crate::utils::SliceWrapper;
 use crate::{AFMessage, AFMessageHeader, debug_println};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -1549,22 +1550,6 @@ where
                 // Create shared buffers for string data using SharedBuffer
                 use minarrow::structs::shared_buffer::SharedBuffer;
 
-                struct SliceWrapper<M: ?Sized> {
-                    _owner: Arc<M>,
-                    offset: usize,
-                    len: usize,
-                }
-
-                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
-                    fn as_ref(&self) -> &[u8] {
-                        let full = self._owner.as_ref();
-                        let slice = full.as_ref();
-                        &slice[self.offset..self.offset + self.len]
-                    }
-                }
-
-                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
-                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
 
                 let data_wrapper = SliceWrapper {
                     _owner: arc_data.clone(),
@@ -1613,22 +1598,6 @@ where
                 // Create shared buffers for string data using SharedBuffer
                 use minarrow::structs::shared_buffer::SharedBuffer;
 
-                struct SliceWrapper<M: ?Sized> {
-                    _owner: Arc<M>,
-                    offset: usize,
-                    len: usize,
-                }
-
-                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
-                    fn as_ref(&self) -> &[u8] {
-                        let full = self._owner.as_ref();
-                        let slice = full.as_ref();
-                        &slice[self.offset..self.offset + self.len]
-                    }
-                }
-
-                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
-                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
 
                 let data_wrapper = SliceWrapper {
                     _owner: arc_data.clone(),
@@ -2079,22 +2048,6 @@ fn push_numeric_col_shared<T, M: ?Sized>(
                   field.name, body_offset, data_offset, final_addr, final_addr % 64 == 0);
 
     // Create a wrapper that references the slice we need
-    struct SliceWrapper<M: ?Sized> {
-        _owner: Arc<M>,
-        offset: usize,
-        len: usize,
-    }
-
-    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
-        fn as_ref(&self) -> &[u8] {
-            let full = self._owner.as_ref();
-            let slice = full.as_ref();
-            &slice[self.offset..self.offset + self.len]
-        }
-    }
-
-    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
-    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
 
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
@@ -2160,22 +2113,6 @@ fn push_float_col_shared<T, M: ?Sized>(
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
 
-    struct SliceWrapper<M: ?Sized> {
-        _owner: Arc<M>,
-        offset: usize,
-        len: usize,
-    }
-
-    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
-        fn as_ref(&self) -> &[u8] {
-            let full = self._owner.as_ref();
-            let slice = full.as_ref();
-            &slice[self.offset..self.offset + self.len]
-        }
-    }
-
-    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
-    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
 
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();

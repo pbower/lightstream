@@ -137,31 +137,28 @@ pub fn unpack_bits(buf: &[u8], len: usize) -> Vec<bool> {
 }
 
 // =============================================================================
-// SharedSliceWrapper - Temporary workaround for SIMD alignment preservation
+// SliceWrapper - Temporary workaround for SIMD alignment preservation
 // =============================================================================
 // TODO: Use MinArrow SharedBuffer directly and test zero-copy.
 
 use std::sync::Arc;
-use minarrow::SharedBuffer;
 
-/// Wrapper around SharedBuffer that preserves 64-byte alignment for memory-mapped data.
+/// Wrapper that preserves 64-byte alignment for memory-mapped data by holding
+/// a reference to the owner and providing a slice view.
 /// This is a temporary workaround until SharedBuffer::from_owner properly preserves alignment.
-pub struct SharedSliceWrapper {
-    inner: SharedBuffer,
+pub struct SliceWrapper<M: ?Sized> {
+    pub _owner: Arc<M>,
+    pub offset: usize,
+    pub len: usize,
 }
 
-impl SharedSliceWrapper {
-    pub fn new(data: Arc<[u8]>) -> Self {
-        Self {
-            inner: SharedBuffer::from_owner(data),
-        }
-    }
-
-    pub fn slice(&self, offset: usize, len: usize) -> SharedBuffer {
-        self.inner.slice(offset..offset + len)
-    }
-
-    pub fn into_shared_buffer(self) -> SharedBuffer {
-        self.inner
+impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+    fn as_ref(&self) -> &[u8] {
+        let full = self._owner.as_ref();
+        let slice = full.as_ref();
+        &slice[self.offset..self.offset + self.len]
     }
 }
+
+unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}

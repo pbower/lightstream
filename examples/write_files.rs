@@ -19,10 +19,6 @@ fn main() {
                         None,
                     )),
                 ),
-                // FieldArray::new(
-                //     Field::new("value", ArrowType::Float64, false, None),
-                //     Array::from_float64(FloatArray::from_vec64(vec64![10.5, 20.0, 30.2, 40.7], None))
-                // ),
             ]
             .into(),
         );
@@ -34,9 +30,6 @@ fn main() {
         )
         .await
         .unwrap();
-
-        // let file_data = std::fs::read("t1.arrow").unwrap();
-        // let _ = verify_arrow_file_blocks(&file_data).unwrap();
 
         // --- Table 2 ---
         let tbl2 = Table::new(

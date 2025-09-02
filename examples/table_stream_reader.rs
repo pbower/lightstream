@@ -239,7 +239,7 @@ fn create_small_sample_tables(num_tables: usize) -> Vec<Table> {
     tables
 }
 
-/// Create larger sample tables for performance testing (same schema as small tables)
+/// Create larger sample tables for performance testing
 fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
     let mut tables = Vec::new();
 
@@ -247,7 +247,7 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
         let n_rows = 5000; // Larger batches
         let start_val = i * 5000;
 
-        // Integer column (same name as small tables)
+        // Integer column
         let int_data: Vec<i32> = (start_val..start_val + n_rows).map(|x| x as i32).collect();
         let int_array = Array::NumericArray(NumericArray::Int32(Arc::new(IntegerArray {
             data: Buffer::from(Vec64::from_slice(&int_data)),
@@ -263,7 +263,7 @@ fn create_large_sample_tables(num_tables: usize) -> Vec<Table> {
             int_array,
         );
 
-        // String column (same name as small tables)
+        // String column
         let individual_strings: Vec<String> = (0..n_rows)
             .map(|j| format!("large_batch_{}_item_{:04}", i, j))
             .collect();
