@@ -1,3 +1,30 @@
+//! # Synchronous Arrow IPC Table Writer
+//!
+//! Provides a streaming, synchronous encoder for writing [`minarrow::Table`] values
+//! into Arrow IPC frames - File or Stream protocol
+//!
+//! ## Overview
+//! - Wraps the generic [`GTableStreamEncoder`] for frame emission
+//! - For pipes, custom network protocols, or synchronous contexts
+//! - Emits schema, dictionaries, record batches, and end-of-stream/footer
+//! - Frames can be pulled incrementally (`next_frame`) or drained all at once
+//!
+//! ## Async Helpers
+//! - [`write_tables_to_stream`] – write a sequence of tables to an async sink.
+//! - [`write_table_to_stream`] – write a single table to an async sink.
+//!
+//! ## Usage
+//! ```ignore
+//! let mut writer = TableStreamWriter::<Vec<u8>>::new(schema, IPCMessageProtocol::Stream);
+//! writer.register_dictionary(0, vec!["A".into(), "B".into()]);
+//! writer.write(&table)?;
+//! writer.finish()?;
+//! while let Some(frame) = writer.next_frame() {
+//!     let buf = frame?;
+//!     sink.write_all(buf.as_ref()).await?;
+//! }
+//! ```
+
 use crate::enums::IPCMessageProtocol;
 use crate::models::encoders::ipc::table_stream::GTableStreamEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
@@ -10,14 +37,22 @@ use std::task::{Context, Poll};
 use tokio::io::AsyncWrite;
 use tokio::io::AsyncWriteExt;
 
-/// Streaming, synchronous Arrow IPC writer for use in pipes, custom network, etc.
+/// # Synchronous Arrow IPC Table Writer
 ///
-/// Example usage:
-///   let mut writer = TableStreamWriter::new(schema, IPCMessageProtocol::Stream);
-///   writer.register_dictionary(0, ...);
-///   writer.write(&table)?;
-///   writer.finish()?;
-///   while let Some(frame) = writer.next_frame() { ... }
+/// Encodes [`minarrow::Table`] values into Arrow File or Stream protocol IPC frames.
+/// Great for pipes, custom transports, or synchronous contexts.
+///
+/// ## Example
+/// ```ignore
+/// let mut writer = TableStreamWriter::<Vec<u8>>::new(schema, IPCMessageProtocol::Stream);
+/// writer.register_dictionary(0, vec!["A".into(), "B".into()]);
+/// writer.write(&table)?;
+/// writer.finish()?;
+/// while let Some(frame) = writer.next_frame() {
+///     let buf = frame?;
+///     sink.write_all(buf.as_ref()).await?;
+/// }
+/// ```
 pub struct TableStreamWriter<B>
 where
     B: StreamBuffer + Unpin + 'static,

@@ -1,25 +1,14 @@
 //! # Byte Stream Traits
 //!
-//! Lightweight, `futures`-compatible trait aliases for asynchronous, chunked byte
-//! streams used throughout Lightstream.
+//! Simple trait aliases that let you plug **any async stream of bytes** into this crate.
+//! Choose regular `Vec<u8>` or 64-byte aligned `Vec64<u8>` when you care about SIMD.
 //!
-//! ## Goals
-//! - **Interoperability:** Accept any `futures_core::Stream` that yields
-//!   `Result<_, std::io::Error>`.
-//! - **Zero-cost abstraction:** Pure trait alias pattern; no boxing, no dyn dispatch.
-//! - **SIMD alignment** Foundational `ByteStream64` for 64-byte aligned
-//!   buffers read and written via `minarrow::Vec64<u8>`. This helps to avoid additional
-//!   re-allocations when the target is shortest path to SIMD-ready buffers.
+//! **Why this is useful**
+//! - Works with any `futures_core::Stream<Result<_, io::Error>>` (files, sockets, in-memory).
+//! - No extra layers or boxing—just trait bounds.
+//! - Optional `ByteStream64` avoids re-allocations when you need aligned buffers.
 //!
-//! ## Notes
-//! - All traits require `Send + Unpin` to ensure compatibility with common async
-//!   executors and to allow safe movement across tasks.
-//! - Backpressure semantics are inherited from the underlying `Stream`
-//!   implementation.
-//!
-//! The module provides **trait bounds** as low-level foundational primitive.
-//! Concrete stream implementations are supplied by callers (e.g. file/network sources,
-//! framed transports, or in-memory producers).
+//! Backpressure and scheduling are handled by your underlying stream.
 
 use futures_core::Stream;
 use minarrow::Vec64;

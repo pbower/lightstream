@@ -1,4 +1,40 @@
-//! Parquet file writer
+//! # Parquet file writer
+//!
+//! Parquet v2 writer for `minarrow::Table`.
+//!
+//! ## Overview
+//! - Writes a single-row-group Parquet file with page-chunked columns
+//! - Emits dictionary pages for categorical columns and data pages in fixed-size chunks
+//! - Computes per-page null counts (only) into parquet statistics; tracks page/block offsets in metadata
+//! - Supports `Compression::{None, Snappy, Zstd}` when enabled via features.
+//! - Supported Encodings:
+//!     * `PLAIN` for primitives and strings
+//!     * `RLE_DICTIONARY` for categoricals
+//!     * Uses RLE/bit-packing to encode definition and repetition levels
+//!
+//! ## Intended use
+//! - Produce fast, straightforward, zero-dependency interoperable Parquet files directly from in-memory `Table` data
+//! - Pipe/stream or persist to disk using any `Write + Seek` sink
+//! - Avoid paying ecosystem compile-time penalty when simple read/writes are needed
+//!
+//! ## Limitations
+//! - Focused subset of the spec (no nested types, decimals, maps/lists, etc.)
+//! - One row group per file (sufficient for many batch/export workflows)
+//!
+//! ## Alternatives
+//! - From `Minarrow`, go `.to_arrow()` and get immediate access to the official writer.
+//!
+//! ## Example
+//! ```no_run
+//! use std::fs::File;
+//! use minarrow::Table;
+//! use minarrow_io::compression::Compression;
+//! use minarrow_io::models::encoders::parquet::writer::write_parquet_table;
+//!
+//! # let table = Table::default();
+//! let mut file = File::create("data.parquet").unwrap();
+//! write_parquet_table(&table, &mut file, Compression::Zstd).unwrap();
+//! ```
 
 use std::io::{Seek, Write};
 
@@ -17,7 +53,7 @@ use crate::models::encoders::parquet::data::{
 };
 use crate::models::encoders::parquet::metadata::{
     ColumnChunkMeta, ColumnMetadata, DataPageHeaderV2, DictionaryPageHeader, FileMetaData,
-    PARQUET_MAGIC, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
+    PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
 };
 use crate::models::types::parquet::ParquetLogicalType::{self};
 use crate::models::types::parquet::{ParquetEncoding, arrow_type_to_parquet};
@@ -28,7 +64,10 @@ pub const PAGE_CHUNK_SIZE: usize = 32_768;
 /// Write the in-memory [`Table`] to `out` in *Parquet v2* format,
 /// supporting chunked/multi-page columns, per spec.
 ///
-/// We have basic Parquet support at this time.
+/// # Support
+/// We have essentials Parquet support at this time.
+/// TLDR: **One can write, and read Parquet from `Minarrow`, but reading
+/// external files with more niche encodings may not work**.
 ///
 /// **Implemented**:
 /// - Multiple data pages per column are emitted in fixed-size chunks.
@@ -41,14 +80,12 @@ pub const PAGE_CHUNK_SIZE: usize = 32_768;
 ///
 /// **Not Implemented**
 /// - Other parquet encodings are not.
+/// - *PR's are welcome!*
 ///
-/// **One can write, and read Parquet from `Minarrow`, but reading
-/// external files with more niche encodings may not work**.
-///
-/// To help with this:
-///     - One can bridge over FFI to `arrow-rs`, `polars_arrow`, or `arrow2`,
-///     to access the full reader/writer ecosystem.
-///     - *PR's are welcome!*
+/// # Alternatives
+/// - When using Minarrow, one can use `.to_arrow()` or `.to_polars() to
+/// bridge over FFI to `arrow-rs`, `polars_arrow`, to immediately access the
+/// full reader/writer ecosystem, but at the penalty of long compile times.
 pub fn write_parquet_table<W: Write + Seek>(
     table: &Table,
     mut out: W,

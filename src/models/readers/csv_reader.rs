@@ -1,9 +1,11 @@
-//! CsvReader: High-level API for reading CSV files or streams into Minarrow Tables.
-//! - Supports chunked reading (batch iteration), schema inference or user-specified schema.
-//! - Fully customisable options (delimiter, nulls, quoting, batch size, etc).
+//! # CsvReader - *Read CSVs into `Table`*
+//!
+//! High-level API for reading CSV files or streams into Minarrow Tables.
+//! - Supports chunked reading (i.e., batch iteration), schema inference or user-specified schema.
+//! - Fully customisable options - delimiter, nulls, quoting, batch size, etc.
 //! - No external dependencies.
 //!
-//! See CsvDecodeOptions for configuration.
+//! See `CsvDecodeOptions` for configuration.
 
 use crate::models::decoders::csv::{CsvDecodeOptions, decode_csv};
 use minarrow::{Field, Table};
@@ -11,9 +13,9 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::Path;
 
-/// CsvReader provides a high-level interface for reading CSV into Minarrow Tables.
+/// Reads CSV files into Minarrow Tables.
 /// - Use `from_path`, `from_reader`, or `from_slice`.
-/// - Supports `next_batch` for chunked reading.
+/// - Includes `next_batch` for chunked reading.
 /// - Supports schema inference and access.
 pub struct CsvReader<R: BufRead> {
     reader: R,
@@ -37,7 +39,7 @@ impl CsvReader<BufReader<File>> {
 }
 
 impl<R: BufRead> CsvReader<R> {
-    /// Create from any BufRead (file, slice, etc).
+    /// Create from any BufRead (file, slice, etc.)
     pub fn from_reader(reader: R, options: CsvDecodeOptions, batch_size: usize) -> Self {
         CsvReader {
             reader,
@@ -58,7 +60,9 @@ impl<R: BufRead> CsvReader<R> {
         CsvReader::from_reader(reader, options, batch_size)
     }
 
-    /// Get the inferred or user-provided schema (requires reading first batch if not already done).
+    /// Get the inferred or user-provided schema
+    ///
+    /// Requires reading first batch if not already done
     pub fn schema(&mut self) -> io::Result<&[Field]> {
         if self.schema.is_none() && !self.finished {
             if let Some(batch) = self.next_batch()? {
@@ -75,7 +79,7 @@ impl<R: BufRead> CsvReader<R> {
     }
 
     /// Read the next batch of rows as a Table.
-    /// Returns Ok(None) if end of file is reached.
+    /// Returns Ok(None) if end of file is reached
     pub fn next_batch(&mut self) -> io::Result<Option<Table>> {
         if self.finished {
             return Ok(None);
@@ -83,7 +87,7 @@ impl<R: BufRead> CsvReader<R> {
 
         let mut batch_options = self.options.clone();
 
-        // If we have a schema, all further batches should *not* treat any row as header.
+        // If we have a schema, all further batches should *not* treat any row as header
         if self.schema.is_some() {
             batch_options.has_header = false;
             batch_options.schema = self.schema.clone();
@@ -123,7 +127,7 @@ impl<R: BufRead> CsvReader<R> {
             return Ok(None);
         }
 
-        // Compose chunk for decode_csv.
+        // Compose chunk for decode_csv
         let mut chunk = Vec::new();
         for line in &rows {
             chunk.extend_from_slice(line);
@@ -143,7 +147,7 @@ impl<R: BufRead> CsvReader<R> {
             );
         }
 
-        // If fewer than batch_size data rows, mark as finished.
+        // If fewer than batch_size data rows, mark as finished
         let effective_n_rows = table.n_rows;
         if effective_n_rows < self.batch_size {
             self.finished = true;
@@ -152,7 +156,7 @@ impl<R: BufRead> CsvReader<R> {
         Ok(Some(table))
     }
 
-    /// Consume the entire input and return a single Table (all rows).
+    /// Consume the entire input and return a single Table - all rows
     pub fn into_table(mut self) -> io::Result<Table> {
         // Always respect has_header on first call
         decode_csv(&mut self.reader, &self.options)

@@ -1,8 +1,11 @@
 //! # Parquet Encoding Helpers
 //!
 //! Little-endian “plain” encoders for numeric/temporal types, bit-packed boolean
-//! encoding, UTF-8 string encoders, and hybrid RLE/bit-packing for dictionary indices. 
+//! encoding, UTF-8 string encoders, and hybrid RLE/bit-packing for dictionary indices.
 //! Booleans are stored bit-packed, LSB-first, per the Parquet format.
+//!
+//! Currently supports the core physical types. Extranneous Parquet
+//! encodings and nested types are not implemented.
 
 // Primitive encoders
 
@@ -103,7 +106,7 @@ pub fn encode_bool_bitpacked(
 // UTF-8 strings
 
 /// Encode String32 (UTF-8) using length-prefix (u32 LE) per row
-/// 
+///
 /// Nulls emit zero length.
 pub fn encode_string_plain(
     offsets: &[u32],
@@ -129,7 +132,7 @@ pub fn encode_string_plain(
 
 #[cfg(feature = "large_string")]
 /// Encode LargeString (i.e., UTF-8, 64-bit offsets) as length-prefix (u32 LE)
-/// 
+///
 /// Nulls emit zero length.
 pub fn encode_large_string_plain(
     offsets: &[u64],
@@ -144,7 +147,7 @@ pub fn encode_large_string_plain(
         let end = offsets[i + 1] as usize;
         let s_len = if valid { end - start } else { 0 };
         if valid && s_len > u32::MAX as usize {
-            return Err(IoError::MinarrowError(format!(
+            return Err(IoError::InputDataError(format!(
                 "string >4 GiB ({} bytes)",
                 s_len
             )));
@@ -162,14 +165,14 @@ pub fn encode_large_string_plain(
 // Temporal aliases for the same physical type
 
 /// Encode `DATE32`/`TIME32` using Parquet plain format.
-/// 
+///
 /// Backed by a physical i32.
 pub fn encode_datetime32_plain(data: &[i32], out: &mut Vec<u8>) {
     encode_int32_plain(data, out)
 }
 
 /// Encode `DATE64`/`TIME64` using Parquet plain format.
-/// 
+///
 /// Backed by a physical i64.
 pub fn encode_datetime64_plain(data: &[i64], out: &mut Vec<u8>) {
     encode_int64_plain(data, out)
@@ -438,7 +441,7 @@ mod tests {
         let offsets = [0u64, (u32::MAX as u64) + 1];
         let values = vec![0u8; 10]; // actual data length is small, but offset says huge
         let res = encode_large_string_plain(&offsets, &values, None, 1, &mut Vec::new());
-        assert!(matches!(res, Err(IoError::MinarrowError(_))));
+        assert!(matches!(res, Err(IoError::InputDataError(_))));
     }
 
     #[test]

@@ -1,3 +1,13 @@
+//! # Asynchronous Arrow IPC table sink
+//!
+//! Wraps any `AsyncWrite` and streams [`minarrow::Table`] values as Arrow IPC frames.
+//!
+//! ## Overview:
+//! - Supports Stream or File protocol
+//! - Handles schema emission, optional compression, dictionary batches, record batches, and end-of-stream/footer generation.
+//! - Supports both 8-byte (`Vec<u8>`) and 64-byte SIMD-aligned (`Vec64<u8>`) buffers via [`TableSink`] and [`TableSink64`] type aliases.
+//! - Supports backpressure-friendly, chunked writes with partial-write handling in async runtimes (e.g. Tokio).
+
 use crate::compression::Compression;
 use crate::enums::IPCMessageProtocol;
 use crate::models::encoders::ipc::table_stream::GTableStreamEncoder;

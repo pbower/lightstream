@@ -1,25 +1,44 @@
-//! Arrow + Minarrow type <-> Parquet physical + logical type
+//! # Arrow <-> Parquet Type Mapping
+//!
+//! This module provides conversions between Arrow/Minarrow types and Parquet physical/logical
+//! types as defined in the Parquet specification.  
+//! It's used during encoding and decoding of Parquet files to ensure type-safe
+//! interoperability.
 
 use crate::error::IoError;
 #[cfg(feature = "datetime")]
 use minarrow::TimeUnit;
 use minarrow::{ArrowType, ffi::arrow_dtype::CategoricalIndexType};
 
-/// Parquet physical type IDs (per parquet.thrift)
+/// Parquet physical types as defined in `parquet.thrift`.
+///
+/// These represent the low-level storage format for values in Parquet
+/// files, independent of higher-level logical annotations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParquetPhysicalType {
+    /// Bitpacked Boolean
     Boolean = 0,
+    /// 32-bit signed integer.
     Int32 = 1,
+    /// 64-bit signed integer.
     Int64 = 2,
+    /// 32-bit IEEE floating point.
     Float = 3,
+    /// 64-bit IEEE floating point.
     Double = 4,
+    /// Variable-length byte array (used for strings and binary data).
     ByteArray = 6,
 }
 
 impl ParquetPhysicalType {
+    /// Return the Parquet `i32` type ID corresponding to this physical type.
     pub fn as_i32(self) -> i32 {
         self as i32
     }
+
+    /// Convert from a Parquet `i32` type ID into a [`ParquetPhysicalType`].
+    ///
+    /// Returns `None` if the ID does not match a known type.
     pub fn from_i32(val: i32) -> Option<Self> {
         match val {
             0 => Some(Self::Boolean),
@@ -33,34 +52,54 @@ impl ParquetPhysicalType {
     }
 }
 
+/// Parquet logical (or "converted") types as defined in `parquet.thrift`.
+///
+/// These annotate a physical type with higher-level semantics,
+/// e.g. `Utf8` over a `ByteArray` or `Date32` over an `Int32`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ParquetLogicalType {
+    /// No logical annotation.
     NoneType,
+    /// UTF-8 encoded string.
     Utf8,
+    /// 32-bit date - days since epoch
     #[cfg(feature = "datetime")]
     Date32,
+    /// 64-bit date - milliseconds since epoch
     #[cfg(feature = "datetime")]
     Date64,
+    /// 64-bit timestamp - milliseconds since epoch
     #[cfg(feature = "datetime")]
     TimestampMillis,
+    /// 64-bit timestamp - microseconds since epoch
     #[cfg(feature = "datetime")]
     TimestampMicros,
+    /// 64-bit timestamp - nanoseconds since epoch
     #[cfg(feature = "datetime")]
     TimestampNanos,
+    /// 32-bit time - milliseconds since midnight
     #[cfg(feature = "datetime")]
     TimeMillis,
+    /// 32-bit time - microseconds since midnight
     #[cfg(feature = "datetime")]
     TimeMicros,
+    /// 64-bit time - nanoseconds since midnight
     #[cfg(feature = "datetime")]
     TimeNanos,
+    /// Integer type with specified bit width and sign.
     IntType {
+        /// Number of bits (8, 16, 32, 64).
         bit_width: u8,
+        /// Whether the type is signed (`true`) or unsigned (`false`).
         is_signed: bool,
     },
 }
 
 impl ParquetLogicalType {
-    /// Convert from Parquet ConvertedType (legacy logical type), per parquet.thrift.
+    /// Convert from Parquet `ConvertedType` (legacy logical type IDs).
+    ///
+    /// Returns `None` if the ID is unsupported or maps to a type that is not
+    /// handled (e.g. `MAP`, `DECIMAL`, `LIST`).
     pub fn from_converted_type(id: Option<i32>) -> Option<Self> {
         match id {
             None => None,
@@ -76,7 +115,7 @@ impl ParquetLogicalType {
             Some(6) => Some(ParquetLogicalType::TimeMillis),
             #[cfg(feature = "datetime")]
             Some(7) => Some(ParquetLogicalType::TimeMicros),
-            Some(8) => None, // UINT_8 (handled below)
+            Some(8) => None, // UINT_8 (unsupported legacy alias)
             #[cfg(feature = "datetime")]
             Some(9) => Some(ParquetLogicalType::TimestampMillis),
             #[cfg(feature = "datetime")]
@@ -115,7 +154,7 @@ impl ParquetLogicalType {
             }),
             Some(19) => None, // LIST (unsupported)
             Some(20) => None, // DECIMAL (unsupported)
-            Some(21) => None, // ENUM
+            Some(21) => None, // ENUM (unsupported)
             Some(22) => None, // UTF8 (duplicate, handled above)
             Some(23) => None, // BSON
             Some(24) => None, // JSON
@@ -173,7 +212,6 @@ impl ParquetEncoding {
 }
 
 /// Authoritative mapping from ArrowType to Parquet physical/logical.
-/// Only implemented/allowed types are present.
 /// Returns IoError for any unsupported/disabled variant.
 pub(crate) fn arrow_type_to_parquet(
     ty: &ArrowType,
@@ -444,7 +482,7 @@ pub(crate) fn parquet_to_arrow_type(
         (ParquetPhysicalType::Float, _) => Ok(ArrowType::Float32),
         (ParquetPhysicalType::Double, _) => Ok(ArrowType::Float64),
 
-        // Strings (always logical UTF8/Utf8)
+        // Strings - always logical UTF8/Utf8
         #[cfg(not(feature = "large_string"))]
         (ParquetPhysicalType::ByteArray, Some(ParquetLogicalType::Utf8)) => Ok(ArrowType::String),
         #[cfg(feature = "large_string")]
@@ -452,7 +490,7 @@ pub(crate) fn parquet_to_arrow_type(
             Ok(ArrowType::LargeString)
         }
 
-        // Fallback: treat byte array without logical utf8 as unsupported
+        // Fallback -- treat byte array without logical utf8 as unsupported
         (ParquetPhysicalType::ByteArray, None) => {
             Err(IoError::UnsupportedType("Binary not supported".into()))
         }
@@ -463,36 +501,3 @@ pub(crate) fn parquet_to_arrow_type(
         ))),
     }
 }
-
-// /// Map a DatetimeArray's unit to Parquet logical type, using both the Arrow Field and array unit.
-// #[cfg(feature = "datetime")]
-// pub fn datetime_array_to_parquet_logical(
-//     field: &Field
-// ) -> Result<ParquetLogicalType, IoError> {
-//     match &field.dtype {
-//         ArrowType::Date32 => Ok(ParquetLogicalType::Date32),
-//         ArrowType::Date64 => Ok(ParquetLogicalType::Date64),
-//         ArrowType::Timestamp(unit) => match unit {
-//             TimeUnit::Milliseconds => Ok(ParquetLogicalType::TimestampMillis),
-//             TimeUnit::Microseconds => Ok(ParquetLogicalType::TimestampMicros),
-//             TimeUnit::Nanoseconds => Ok(ParquetLogicalType::TimestampNanos),
-//             TimeUnit::Seconds => Ok(ParquetLogicalType::TimestampMillis),
-//             TimeUnit::Days => Ok(ParquetLogicalType::Date64)
-//         },
-//         ArrowType::Time32(unit) => match unit {
-//             TimeUnit::Milliseconds => Ok(ParquetLogicalType::TimeMillis),
-//             TimeUnit::Microseconds => Ok(ParquetLogicalType::TimeMicros),
-//             TimeUnit::Nanoseconds => Ok(ParquetLogicalType::TimeNanos),
-//             TimeUnit::Seconds => Ok(ParquetLogicalType::TimeMillis),
-//             TimeUnit::Days => Ok(ParquetLogicalType::Date32)
-//         },
-//         ArrowType::Time64(unit) => match unit {
-//             TimeUnit::Milliseconds => Ok(ParquetLogicalType::TimeMillis),
-//             TimeUnit::Microseconds => Ok(ParquetLogicalType::TimeMicros),
-//             TimeUnit::Nanoseconds => Ok(ParquetLogicalType::TimeNanos),
-//             TimeUnit::Seconds => Ok(ParquetLogicalType::TimeMillis),
-//             TimeUnit::Days => Ok(ParquetLogicalType::Date64)
-//         },
-//         _ => Err(IoError::UnsupportedType("Not a temporal ArrowType".into()))
-//     }
-// }

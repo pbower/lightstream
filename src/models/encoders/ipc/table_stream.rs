@@ -9,7 +9,7 @@
 //! - [`TableStreamEncoder64`] (uses SIMD-aligned `Vec64<u8>` buffer)
 //!
 //! It supports both Arrow IPC *Stream* and *File* protocols, optional compression, and dictionary
-//! encoding for categorical columns. The encoder yields frames one-by-one via `poll_next`, so it 
+//! encoding for categorical columns. The encoder yields frames one-by-one via `poll_next`, so it
 //! slots into futures, backpressure-aware and asynchronous situation (e.g, Tokio).
 //!
 //! For most use cases, prefer higher-level abstractions like `TableWriter`.  
@@ -739,7 +739,7 @@ where
         let (n_nulls, null_buf) = make_null_buffer(nullable, null_bitmap, body);
         fb_buffers.push(null_buf);
         for &slice in data_slices {
-            let meta_buf = push_buffer(body, slice);
+            let meta_buf = push_buffer_with_compression(body, slice, self.compression)?;
             fb_buffers.push(meta_buf);
         }
         fb_field_nodes.push(fbm::FieldNode::new(n_rows as i64, n_nulls as i64));

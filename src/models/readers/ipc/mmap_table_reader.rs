@@ -1,3 +1,24 @@
+//! Memory-mapped Arrow IPC file reader.
+//!
+//! # Overview
+//! Zero-copy reader for Arrow IPC files backed by a
+//! custom `mmap` wrapper. Parses the footer/schema, loads dictionaries, and
+//! exposes batches as `Table` or aggregates as `SuperTable`.
+//!
+//! # Zero-Copy
+//! Buffers are read directly when 64-byte aligned (as produced by this
+//! crate’s writers); otherwise they are copied via SIMD-friendly allocations.
+//! This ensures data is in the optimal format for downstream calculations upfront,
+//! though is a notable limitation or those who aren't planning for that use case
+//! at the present time.
+//!
+//! # Platform:
+//! Uses POSIX `mmap(2)`, supported on Unix-like systems only.
+//!
+//! # Reader spec
+//! Follows the Arrow IPC specification
+//! <https://arrow.apache.org/docs/format/Columnar.html#ipc-file-format>.
+
 use std::fs::File;
 use std::io;
 use std::path::Path;
@@ -16,16 +37,22 @@ use crate::models::decoders::ipc::parser::{
 };
 use crate::models::mmap::MemMap;
 
+/// Footer-declared block entry offsets/lengths for a dictionary or record batch.
 #[derive(Debug, Clone)]
 struct IPCFileBlock {
+    /// Absolute byte offset of the block in the file
     offset: usize,
+    /// Length of the FlatBuffers message metadata segment in bytes
     meta_bytes: usize,
+    /// Length of the data body segment in bytes
     body_bytes: usize,
 }
 
-// Simple wrapper that keeps the file and mmap alive together
+/// Keeps file handle and mmap region alive together; dereferences to file bytes.
 struct MmapBytes {
+    /// File handle - kept alive for the lifetime of the mapping
     _file: File,
+    /// Memory-mapped region - 64-byte aligned mapping wrapper
     mmap: Arc<MemMap<64>>,
 }
 
@@ -43,17 +70,47 @@ impl AsRef<[u8]> for MmapBytes {
     }
 }
 
+/// Zero-copy Arrow IPC file reader backed by a memory map
+///
+/// It uses a custom `mmap` implementation to avoid bloating dependencies.
+///
+/// ## Zero-Copy behaviour
+/// - Currently zero-copy for 64-byte aligned writers, otherwise it copied into SIMD-friendly buffers.
+/// - The current method to guarantee zero-copy is to use the `TableWriter` from this crate, and the resulting
+/// file can be zero-copy read.
+/// - `.arrow` files written with other implementations e.g., `pyarrow`, `arrow-rs` are usually 8-byte aligned,
+/// and thus will copy at the current time. Though, this means their buffers are often not 64-byte aligned and
+/// thus require re-allocations before processing with SIMD-kernels and related scenarios.
+/// - Hence, this library has initially prioritised this high-performance scenario, though in future we may
+/// add support for the general case, and invite community contributions.
+///
+/// ## Platform
+/// -  This implementation uses POSIX `mmap(2)` for zero-copy access, and is therefore
+/// supported only on Unix-like operating systems (Linux, macOS, BSDs, Solaris, etc.).
+/// - There are no plans to support Windows, however PR's will be accepted.
+///
+/// ## Overview
+/// - Parses footer/schema, loads dictionaries, and exposes batches as `Table` or composites as `SuperTable`.
 #[derive(Clone)]
 pub struct MmapTableReader {
+    /// Backing mmap region and owning file, shared across clones
     region: Arc<MmapBytes>,
+    /// Arrow schema fields from the file footer
     schema: Vec<Arc<Field>>,
+    /// Footer-declared dictionary block table
     dict_blocks: Vec<IPCFileBlock>,
+    /// Footer-declared record batch block table
     record_blocks: Vec<IPCFileBlock>,
+    /// Loaded dictionaries keyed by dictionary id
     dictionaries: std::collections::HashMap<i64, Vec<String>>,
-    aligned_offset: usize, // Offset from original file start to our aligned mmap start
+    /// Offset from original file start to the chosen 64-byte aligned data start
+    aligned_offset: usize,
 }
 
 impl MmapTableReader {
+    /// Open and mmap an Arrow IPC file
+    ///
+    /// Parses footer/schema and block tables.
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = File::open(&path)?;
         let meta = file.metadata()?;
@@ -61,7 +118,7 @@ impl MmapTableReader {
 
         debug_println!("MMAP File len: {}", file_len);
 
-        // ---- MMAP entire file and find 64-byte aligned data region
+        // MMAP entire file and find 64-byte aligned data region
         let mmap = Arc::new(MemMap::<64>::open(
             path.as_ref().to_str().unwrap(),
             0,
@@ -166,14 +223,19 @@ impl MmapTableReader {
         Ok(rdr)
     }
 
+    /// Return the parsed schema fields.
     #[inline]
     pub fn schema(&self) -> &[Arc<Field>] {
         &self.schema
     }
+
+    /// Return the number of record batches in the file.
     #[inline]
     pub fn num_batches(&self) -> usize {
         self.record_blocks.len()
     }
+
+    /// Read the `idx`th record batch as a `Table`.
     pub fn read_batch(&self, idx: usize) -> io::Result<Table> {
         let blk = self
             .record_blocks
@@ -181,10 +243,16 @@ impl MmapTableReader {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "batch idx OOB"))?;
         self.parse_batch_block(blk)
     }
+
+    /// Alias of [`read_batch`].
     #[inline]
     pub fn into_table(&self, idx: usize) -> io::Result<Table> {
         self.read_batch(idx)
     }
+
+    /// Read all record batches and assemble them into a `SuperTable`.
+    ///
+    /// If `name_override` is provided, that name is used for the resulting table.
     pub fn into_supertable(&self, name_override: Option<String>) -> io::Result<SuperTable> {
         let mut batches = Vec::with_capacity(self.record_blocks.len());
         for blk in &self.record_blocks {
@@ -192,6 +260,8 @@ impl MmapTableReader {
         }
         Ok(SuperTable::from_batches(batches, name_override))
     }
+
+    /// Load and materialise all dictionary batches declared in the footer.
     fn load_all_dictionaries(&mut self) -> io::Result<()> {
         let mut new_dicts = std::collections::HashMap::<i64, Vec<String>>::new();
         let data = self.region.as_ref();
@@ -217,15 +287,14 @@ impl MmapTableReader {
         Ok(())
     }
 
+    /// Parse a record batch block into a `Table` - zero-copy over the mmap region
     fn parse_batch_block(&self, blk: &IPCFileBlock) -> io::Result<Table> {
         let data = self.region.as_ref();
         let meta_slice = self.slice_message(data, blk)?;
         let original_body_offset = blk.offset + blk.meta_bytes;
         let body_len = blk.body_bytes;
 
-        // Adjust body_offset so that buffer addresses land on 64-byte boundaries
-        // The first buffer in the body is at offset 0, so we want:
-        // (data.as_ptr() + adjusted_body_offset + 0) to be 64-byte aligned
+        // Adjust body_offset so that buffer addresses land on 64-byte boundaries.
         let data_base_addr = data.as_ptr() as usize;
         let desired_first_buffer_addr = (data_base_addr + original_body_offset + 63) & !63;
         let body_offset = desired_first_buffer_addr - data_base_addr;
@@ -246,7 +315,7 @@ impl MmapTableReader {
             io::Error::new(io::ErrorKind::InvalidData, "expected RecordBatch header")
         })?;
 
-        // Use shared handler that now supports both Arc<[u8]> and mmap zero-copy
+        // Use shared handler that supports both Arc<[u8]> and mmap zero-copy.
         handle_record_batch_shared(
             &rec,
             &self
@@ -261,6 +330,7 @@ impl MmapTableReader {
         )
     }
 
+    /// Slice and validate the FlatBuffers message at the given block - checks continuation + size.
     fn slice_message<'a>(&self, data: &'a [u8], blk: &IPCFileBlock) -> io::Result<&'a [u8]> {
         if blk.offset + 8 > data.len() {
             return Err(io::Error::new(
@@ -279,15 +349,6 @@ impl MmapTableReader {
         // Metadata length
         let meta_len =
             u32::from_le_bytes(data[blk.offset + 4..blk.offset + 8].try_into().unwrap()) as usize;
-        eprintln!(
-            "blk.offset={} meta_bytes={} body_bytes={} meta_len={} slice_len={}",
-            blk.offset,
-            blk.meta_bytes,
-            blk.body_bytes,
-            meta_len,
-            data.len()
-        );
-
         let start = blk.offset + 8;
         let end = start + meta_len;
         if end > data.len() {
@@ -296,28 +357,6 @@ impl MmapTableReader {
                 "msg slice OOB",
             ));
         }
-        // --- DEBUG: Dump file and message slice ---
-        eprintln!("==== BLOCK DUMP ====");
-        eprintln!(
-            "blk.offset = {blk_offset}, meta_bytes = {meta_bytes}, body_bytes = {body_bytes}, meta_len = {meta_len}, file_len = {}",
-            data.len(),
-            blk_offset = blk.offset,
-            meta_bytes = blk.meta_bytes,
-            body_bytes = blk.body_bytes,
-            meta_len = meta_len
-        );
-        let dump = &data[blk.offset..std::cmp::min(data.len(), blk.offset + 32)];
-        eprint!("data[blk.offset..+32]: ");
-        for b in dump {
-            eprint!("{:02X} ", b);
-        }
-        eprintln!();
-        let msg_dump = &data[start..std::cmp::min(data.len(), start + 32)];
-        eprint!("data[start..+32]:      ");
-        for b in msg_dump {
-            eprint!("{:02X} ", b);
-        }
-        eprintln!();
         Ok(&data[start..end])
     }
 }

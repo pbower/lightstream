@@ -1,21 +1,16 @@
-//! # Frame Decoder - **Generic frame decoding infrastructure**.
+//! # Generic Frame Decoder
 //!
-//! ## Purpose
-//! For implementing minimally-allocating, incremental frame decoders over arbitrary byte streams.
+//! Turn a growing byte buffer into **discrete messages** without allocating.
 //!
-//!  In this context, a frame refers to a self-contained unit of data extracted from a byte stream, where:
-//!  - The header (or prefix) specifies the size or format of the upcoming payload.
-//!  - The body (payload) contains exactly the number of bytes the header declares.
+//! **Why this is useful**
+//! - Cleanly split a raw byte stream (from files/sockets) into protocol frames.
+//! - Minimal overhead: the decoder only *looks* at bytes and tells you what to consume.
+//! - Easy to test and reuse across transports.
 //!
-//! A `FrameDecoder` is responsible for detecting protocol frame boundaries within a buffer slice
-//! and reporting when a full logical frame has been received. It does not allocate or retain data;
-//! it only inspects the passed-in buffer and returns how many bytes should be consumed.
-//
-//  # Usage:
-//  - Call `decode(&mut self, &[u8])` repeatedly as more bytes arrive.
-//  - On `Frame { ... }`, consume the reported number of bytes and process the returned frame.
-//  - On `NeedMore`, retain all bytes in the buffer and supply more data.
-//  - On `Err`, treat as protocol violation or irrecoverable stream error.
+//! Implement `FrameDecoder` for your wire format; call `decode()` as chunks arrive.
+//! On a full frame, you get `{ frame, consumed }`; on `NeedMore`, just read more bytes.
+//!
+//! See the IPC, TLV cases as examples.
 
 use crate::enums::DecodeResult;
 use std::io;

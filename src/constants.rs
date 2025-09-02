@@ -38,3 +38,6 @@ pub const CONTINUATION_SENTINEL: u32 = 0xFFFF_FFFF;
 /// Size of the metadata size prefix in bytes.
 /// Prefix = 4-byte little-endian signed integer.
 pub const METADATA_SIZE_PREFIX: usize = 4;
+
+/// Required “PAR1” marker written at Parquet file head and tail.
+pub const PARQUET_MAGIC: &[u8; 4] = b"PAR1";

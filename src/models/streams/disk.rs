@@ -1,3 +1,17 @@
+//! # Asynchronous disk byte stream
+//!
+//! Wraps a file in a [`Stream`] that yields fixed-size byte chunks.
+//!
+//! ## Overview
+//! - Uses Tokio [`File`] + [`BufReader`] under the hood.
+//! - Supports async backpressure via `poll_next`.
+//! - One copy into a `Vec64<u8>` output buffer per chunk.
+//! - Chunk size controlled by [`BufferChunkSize`].
+//!
+//! ## Use cases
+//! - Ingest large files without loading them fully into memory.
+//! - Feed disk I/O directly into async pipelines.
+
 use std::io;
 use std::path::Path;
 use std::pin::Pin;
@@ -30,8 +44,6 @@ pub struct DiskByteStream {
     /// Configured chunk size in bytes.
     chunk_size: usize,
 }
-
-// impl Unpin for DiskByteStream {}
 
 impl DiskByteStream {
     /// Open a file as a `DiskByteStream`.

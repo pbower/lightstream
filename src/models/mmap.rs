@@ -1,3 +1,25 @@
+//! Memory-mapped file reader with alignment guarantees.
+//!
+//! Lightweight wrapper over `mmap(2)` for read-only access to file
+//! regions, ensuring that the mapped slice pointer is aligned to a specified
+//! boundary, i.e., 64 bytes for SIMD, or as per `ALIGN`.  
+//!
+//! ## Overview
+//! - Page-aligned mapping with automatic adjustment of offset.
+//! - Safe sharing (`Send` + `Sync`) as mappings are read-only.
+//! - Exposes zero-copy access via `Deref<[u8]>` and `AsRef<[u8]>`.
+//! - Cleans up resources by `munmap` on drop.
+//!
+//! ## Errors
+//! - Returns an error if the file offset is not aligned to the requested boundary.
+//! - Returns an error if the mapped region is not aligned after adjustment.
+//!
+//! ## Typical use
+//! ```ignore
+//! let mmap = MemMap::<64>::open("data.arrow", 0, 4096)?;
+//! let slice: &[u8] = &mmap;
+//! ```
+
 use std::fs::File;
 use std::io::{self, Error, ErrorKind};
 use std::os::unix::io::AsRawFd;
@@ -73,6 +95,9 @@ impl<const ALIGN: usize> MemMap<{ ALIGN }> {
 }
 
 impl<const ALIGN: usize> AsRef<[u8]> for MemMap<{ ALIGN }> {
+    /// Allow `MemMap` to be borrowed as a raw byte slice (`&[u8]`).
+    ///
+    /// Equivalent to calling [`MemMap::as_slice`].
     fn as_ref(&self) -> &[u8] {
         self.as_slice()
     }
@@ -81,12 +106,23 @@ impl<const ALIGN: usize> AsRef<[u8]> for MemMap<{ ALIGN }> {
 impl<const ALIGN: usize> std::ops::Deref for MemMap<{ ALIGN }> {
     type Target = [u8];
 
+    /// Deref to the underlying `[u8]` slice.
+    ///
+    /// This allows seamless use of `&MemMap` in contexts expecting `&[u8]`.
     fn deref(&self) -> &[u8] {
         self.as_slice()
     }
 }
 
 impl<const ALIGN: usize> Drop for MemMap<{ ALIGN }> {
+    /// Unmap the memory region when the `MemMap` is dropped.
+    ///
+    /// Calculates the original page-aligned base pointer and total mapping
+    /// length, then calls `munmap` to release the mapping back to the OS.
+    ///
+    /// # Safety
+    /// - Safe because the mapping was created by `mmap` in [`MemMap::open`].
+    /// - No double-unmapping occurs as ownership is unique to this `MemMap`.
     fn drop(&mut self) {
         // Compute the base pointer for unmapping
         let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };

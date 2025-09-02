@@ -1,3 +1,13 @@
+//! Async Arrow IPC table reader utilities.
+//!
+//! Wraps a framed Arrow IPC decoder into ergonomic async helpers that:
+//! - read all or N record batches as `Table`,
+//! - assemble batches into a `SuperTable` (retaining batch windows), or
+//! - concatenate batches into a single `Table`.
+//!
+//! Works with any `Stream<Item = Result<B, io::Error>> + AsyncRead` where `B: StreamBuffer`
+//! (e.g. `Vec<u8>` or `Vec64<u8>`), and both Arrow IPC protocols (File/Stream).
+
 use crate::enums::IPCMessageProtocol;
 use crate::models::decoders::ipc::table_stream::GTableStreamDecoder;
 use crate::traits::stream_buffer::StreamBuffer;
@@ -8,11 +18,16 @@ use std::io;
 use std::sync::Arc;
 use tokio::io::AsyncRead;
 
+/// High-level async table reader over a framed Arrow IPC stream.
+///
+/// Drives a [`GTableStreamDecoder`] and exposes convenience methods to pull
+/// batches, aggregate into a `SuperTable`, or concatenate into a single `Table`.
 pub struct TableReader<S, B>
 where
     S: Stream<Item = Result<B, io::Error>> + AsyncRead + Unpin + Send + Sync + 'static,
     B: StreamBuffer + Unpin + 'static,
 {
+    /// Underlying framed decoder yielding Arrow `Table` batches
     decoder: GTableStreamDecoder<S, B>,
 }
 
@@ -21,6 +36,7 @@ where
     S: Stream<Item = Result<B, io::Error>> + AsyncRead + Unpin + Send + Sync + 'static,
     B: StreamBuffer + Unpin + 'static,
 {
+    /// Construct a new reader over `stream` with `initial_capacity` and IPC `protocol`
     pub fn new(stream: S, initial_capacity: usize, protocol: IPCMessageProtocol) -> Self {
         Self {
             decoder: GTableStreamDecoder::new(stream, initial_capacity, protocol),
@@ -36,8 +52,9 @@ where
         Ok(tables)
     }
 
-    /// Read up to `n` Arrow tables (batches) from the stream. If `n` is `None`, reads all available tables.
-    /// Then, if this is an infinite table stream, it may never stop.
+    /// Read up to `n` Arrow tables
+    ///
+    /// If `n` is `None` read until EOS
     pub async fn read_tables(mut self, n: Option<usize>) -> io::Result<Vec<Table>> {
         let mut tables = Vec::new();
         let mut count = 0usize;
@@ -54,8 +71,9 @@ where
         Ok(tables)
     }
 
-    /// Read up to `n` batches and combine them into a SuperTable (retaining batch windows).
-    /// If `n` is `None`, reads all batches. Then, if this is an infinite table stream, it may never stop.
+    /// Read up to `n` batches and assemble them into a `SuperTable`.
+    ///
+    /// If `n` is `None`, read to EOS.
     pub async fn read_to_super_table(
         mut self,
         name: Option<String>,
@@ -80,27 +98,23 @@ where
             }
         }
         Ok(SuperTable {
-            batches: batches,
+            batches,
             schema: schema.unwrap_or_default(),
             n_rows,
             name: name.unwrap_or_else(|| "SuperTable".to_string()),
         })
     }
 
-    /// Read all batches and combine into a single, row-concatenated Table.
-    ///
-    /// This consumes all input and merges all record batches into one Table, preserving
-    /// schema and column order.
+    /// Read all batches and concatenate into a single `Table` row-wise
     pub async fn combine_to_table(mut self, name: Option<String>) -> io::Result<Table> {
         let mut all_batches = Vec::new();
-        use futures_util::StreamExt;
         while let Some(batch) = self.decoder.next().await {
             all_batches.push(batch?);
         }
         combine_batches_to_table(all_batches, name)
     }
 
-    /// Read only the schema (does not consume the batches).
+    /// Return the decoded schema if available after first schema message
     pub fn schema(&self) -> Option<&[Field]> {
         if !self.decoder.fields.is_empty() {
             Some(&self.decoder.fields)
@@ -109,14 +123,13 @@ where
         }
     }
 
-    /// Read the next Table from the stream, if available.
+    /// Read the next `Table` from the stream, or `None` on EOS
     pub async fn read_next(&mut self) -> io::Result<Option<Table>> {
-        use futures_util::StreamExt;
         self.decoder.next().await.transpose()
     }
 }
 
-/// Combine all batches into a single Table
+/// Concatenate a vector of batches into a single `Table`
 fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Result<Table> {
     if batches.is_empty() {
         return Ok(Table::default());
@@ -129,7 +142,7 @@ fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Re
     let n_rows: usize = batches.iter().map(|t| t.n_rows).sum();
     let name = name.unwrap_or_else(|| "CombinedTable".to_string());
 
-    // Concatenate columns
+    // Group columns by index
     let mut combined_cols: Vec<Vec<FieldArray>> = vec![Vec::new(); schema.len()];
     for batch in &batches {
         for (i, col) in batch.cols.iter().enumerate() {
@@ -137,7 +150,7 @@ fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Re
         }
     }
 
-    // Merge each column by type (assumes schema match is enforced)
+    // Concatenate by column
     let cols = combined_cols
         .into_iter()
         .map(|col_batches| concat_field_arrays(col_batches))
@@ -146,11 +159,7 @@ fn combine_batches_to_table(batches: Vec<Table>, name: Option<String>) -> io::Re
     Ok(Table { cols, n_rows, name })
 }
 
-/// Concatenate a vector of FieldArray with the same schema using efficient in-place semantics.
-/// Uses `Array::concat_array` to avoid unnecessary copying.
-///
-/// Panics if arrays are not the same logical type or incompatible.
-/// If you want graceful error handling for schema mismatches, add validation above.
+/// Concatenate multiple `FieldArray` segments of the same schema into one.
 fn concat_field_arrays(batches: Vec<FieldArray>) -> io::Result<FieldArray> {
     if batches.is_empty() {
         return Err(io::Error::new(
@@ -162,7 +171,6 @@ fn concat_field_arrays(batches: Vec<FieldArray>) -> io::Result<FieldArray> {
     let mut first = iter.next().unwrap();
 
     for arr in iter {
-        // Safe to use mutable borrow since we own all FieldArray elements
         first.array.concat_array(&arr.array);
         first.null_count += arr.null_count;
     }

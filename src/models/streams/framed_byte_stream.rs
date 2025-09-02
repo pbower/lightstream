@@ -1,3 +1,13 @@
+//! # Generic async framed byte stream
+//!
+//! Adapts any chunked byte source into a stream of protocol frames using a
+//! user-supplied [`FrameDecoder`].
+//!
+//! - Works with any `GenByteStream<B>` (e.g., network/file sources).
+//! - Buffers partial input and yields complete frames as soon as available.
+//! - Propagates protocol errors; detects truncated frames at EOF.
+//! - Supports both standard and SIMD-aligned buffers via `StreamBuffer`.
+
 use futures_core::Stream;
 use std::io;
 use std::pin::Pin;
@@ -8,40 +18,33 @@ use crate::traits::byte_stream::GenByteStream;
 use crate::traits::frame_decoder::FrameDecoder;
 use crate::traits::stream_buffer::StreamBuffer;
 
-/// Asynchronous streaming adapter for length-delimited or framed binary protocols (generic).
+/// Asynchronous framed byte stream adapter for binary protocols.
 ///
-/// `FramedByteStreamGeneric` takes any chunked byte source (implementing `GenByteStream`)
-/// and produces high-level frames using a user-supplied frame decoder (`FrameDecoder`).
+/// Converts a chunked byte source (`GenByteStream`) into a stream of
+/// protocol-level frames using a user-supplied [`FrameDecoder`].
 ///
-/// # Purpose
-/// - Converts a raw byte stream (arbitrary-sized chunks, possibly partial messages)
-///   into a clean stream of protocol-level frames (e.g., Arrow IPC, Protobuf messages).
+/// ## Overview
+/// - Accepts any async source yielding `StreamBuffer` chunks (e.g. file, socket).
+/// - Maintains an internal rolling buffer (`B`) for incremental decoding.
+/// - Uses the decoder to extract frames as soon as enough bytes are available.
+/// - On EOF, any remaining bytes in the buffer are treated as a truncated frame and error.
 ///
-/// # Mechanism
-/// - Maintains an internal buffer (`B`) which holds all unread bytes.
-/// - Invokes the `FrameDecoder` repeatedly on the buffer, extracting and yielding
-///   complete frames as soon as enough bytes are available.
-/// - If insufficient data is available for a frame, automatically fetches more bytes
-///   from the underlying source and appends to the buffer.
-/// - Protocol errors or truncated frames at end-of-stream yield an error.
+/// ## Behaviour
+/// - Decoder output must follow [`DecodeResult`] semantics.
+/// - Buffer is only drained after a successful frame decode.
+/// - Suitable for framed protocols like Arrow IPC, Protobuf, custom TLV, etc.
 ///
-/// # Usage
-/// - Construct via `FramedByteStreamGeneric::new(stream, decoder, initial_capacity)`.
-/// - Poll as a `Stream<Item=Result<D::Frame, io::Error>>`.
-/// - Suitable for streaming, async, and chunked IO contexts.
+/// ## Construction
+/// Use [`FramedByteStream::new(stream, decoder, capacity)`] to create.
 ///
-/// # Invariants
-/// - The decoder **never allocates or mutates** the buffer beyond consumption.
-/// - The buffer is only drained after successful frame extraction.
-/// - On `Poll::Ready(None)` (end-of-stream), any residual bytes in the buffer are
-///   treated as a truncated frame and return an error.
+/// ## Errors
+/// - Protocol errors or truncated buffers result in `io::Error`.
 ///
-/// # Example
+/// ## Examples
 /// ```ignore
-/// let byte_stream = ...; // Implements ByteStream or ByteStream64
-/// let decoder = MyProtocolDecoder::new();
-/// let mut stream = FramedByteStreamGeneric::new(byte_stream, decoder, 4096);
-/// while let Some(frame) = stream.next().await { ... }
+/// let stream = MyChunkedSource::new(...);
+/// let decoder = MyFrameDecoder::new();
+/// let framed = FramedByteStream::new(stream, decoder, 4096);
 /// ```
 pub struct FramedByteStream<S, D, B>
 where
@@ -73,6 +76,7 @@ where
     }
 }
 
+/// Implements `Stream` to yield decoded protocol frames from a chunked byte source.
 impl<S, D, B> Stream for FramedByteStream<S, D, B>
 where
     S: GenByteStream<B>,

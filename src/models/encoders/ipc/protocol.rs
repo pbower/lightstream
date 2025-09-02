@@ -198,7 +198,6 @@ impl IPCFrameEncoder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
 

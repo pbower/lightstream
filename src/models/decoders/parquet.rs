@@ -6,9 +6,9 @@
 //! Provides low-level decoding utilities for Parquet-encoded buffers,
 //! used internally by higher-level Table or Array readers.
 
-use std::io::Read;
-use minarrow::Vec64;
 use crate::error::IoError;
+use minarrow::Vec64;
+use std::io::Read;
 
 // Primitive decoders
 

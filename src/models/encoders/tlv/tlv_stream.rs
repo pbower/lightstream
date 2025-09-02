@@ -1,3 +1,12 @@
+//! # TLV Stream Writer
+//!
+//! Asynchronous, pull-based producer that encodes Type–Length–Value frames and yields them
+//! as a `futures_core::Stream` of buffers. Uses the generic [`StreamBuffer`] so you can emit
+//! either standard `Vec<u8>` or SIMD-aligned `Vec64<u8>` buffers. Push frames with
+//! [`TLVStreamWriter::write_frame`], then call [`TLVStreamWriter::finish`] to signal end of stream.
+//!
+//! No alignment padding is applied.
+
 use std::collections::VecDeque;
 use std::io;
 use std::pin::Pin;
@@ -48,6 +57,7 @@ impl<B: StreamBuffer + 'static> TLVStreamWriter<B> {
     }
 }
 
+/// Implements `Stream` to yield encoded TLV frames in order until `finish` is called.
 impl<B> Stream for TLVStreamWriter<B>
 where
     B: StreamBuffer + Unpin + 'static,

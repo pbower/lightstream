@@ -1,3 +1,17 @@
+//! # Arrow IPC File Reader - *Heap-backed version*
+//!
+//! ## Overview
+//! Reads Arrow IPC file format into heap memory. Parses the footer,
+//! loads schema, dictionaries, and record batch blocks, and exposes batches as
+//! `Table` or a `SuperTable` aggregation.
+//!
+//! Consistent with the Arrow IPC file specification; expects opening/closing magic,
+//! footer length, and block tables.
+//!
+/// # Which reader?
+/// - **Speed**: Prefer the mmap variant [`MmapTableReader`] when zero-copy performance is required -
+/// for e.g., the MMAP version can read millions of rows in microseconds, microseconds, and very large volumes in milliseconds.
+/// - **Flexibility**: this standard reader is more flexible as it is not tied to memory-mapped shared memory.
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
@@ -14,36 +28,45 @@ use crate::models::decoders::ipc::parser::{
     handle_record_batch_shared,
 };
 
+/// Footer-declared block entry (i.e., offsets/lengths) for a dictionary or record batch.
 #[derive(Debug, Clone)]
 struct IPCFileBlock {
+    /// Absolute byte offset of the block in the file.
     offset: usize,
+    /// Length of the FlatBuffers message metadata segment in bytes.
     meta_bytes: usize,
+    /// Length of the data body segment in bytes.
     body_bytes: usize,
 }
 
-/// Heap‑allocated Arrow file reader (no mmap).
+/// Heap-allocated Arrow file reader.
+///
+/// # Which reader?
+/// - **Speed**: Prefer the mmap variant [`MmapTableReader`] when zero-copy performance is required -
+/// for e.g., the MMAP version can read millions of rows in microseconds, and very large volumes in milliseconds.
+/// - **Flexibility**: this standard reader is more flexible as it is not tied to memory-mapped
+/// shared memory.
 #[derive(Clone)]
 pub struct FileTableReader {
+    /// Entire file contents pinned in heap memory
     data: Arc<[u8]>,
+    /// Arrow schema fields from the file footer
     schema: Vec<Arc<Field>>,
+    /// Footer-declared dictionary block table
     dict_blocks: Vec<IPCFileBlock>,
+    /// Footer-declared record batch block table
     record_blocks: Vec<IPCFileBlock>,
+    /// Loaded dictionaries keyed by dictionary id
     dictionaries: std::collections::HashMap<i64, Vec<String>>,
 }
 
 impl FileTableReader {
-    /// Open an Arrow file into heap memory.
+    /// Open an Arrow IPC file into heap memory and parse footer/schema/block tables.
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let mut file = File::open(&path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         let len = buf.len();
-        //debug_println!("File len: {}", len);
-
-        // for i in 0..len {
-        //     print!("{:02X} ", buf[i]);
-        //     if i % 16 == 15 { println!(); }
-        // }
 
         if len < 12 {
             return Err(io::Error::new(
@@ -130,16 +153,19 @@ impl FileTableReader {
         Ok(rdr)
     }
 
+    /// Return the parsed schema fields
     #[inline]
     pub fn schema(&self) -> &[Arc<Field>] {
         &self.schema
     }
 
+    /// Return the number of record batches in the file
     #[inline]
     pub fn num_batches(&self) -> usize {
         self.record_blocks.len()
     }
 
+    /// Read the `idx`th record batch as a `Table`
     pub fn read_batch(&self, idx: usize) -> io::Result<Table> {
         let blk = self
             .record_blocks
@@ -148,11 +174,15 @@ impl FileTableReader {
         self.parse_batch_block(blk)
     }
 
+    /// Alias of [`read_batch`]
     #[inline]
     pub fn into_table(&self, idx: usize) -> io::Result<Table> {
         self.read_batch(idx)
     }
 
+    /// Read all record batches and assemble them into a `SuperTable`
+    ///
+    /// If `name_override` is provided, that name is used for the resulting table
     pub fn into_supertable(&self, name_override: Option<String>) -> io::Result<SuperTable> {
         let mut batches = Vec::with_capacity(self.record_blocks.len());
         for blk in &self.record_blocks {
@@ -161,6 +191,7 @@ impl FileTableReader {
         Ok(SuperTable::from_batches(batches, name_override))
     }
 
+    /// Load and materialise all dictionary batches declared in the footer
     fn load_all_dictionaries(&mut self) -> io::Result<()> {
         let mut new_dicts = std::collections::HashMap::<i64, Vec<String>>::new();
         for blk in &self.dict_blocks {
@@ -180,6 +211,7 @@ impl FileTableReader {
         Ok(())
     }
 
+    /// Parse a record batch block into a `Table`
     fn parse_batch_block(&self, blk: &IPCFileBlock) -> io::Result<Table> {
         let meta_slice = self.slice_message(blk)?;
         let body_offset = blk.offset + blk.meta_bytes;
@@ -205,6 +237,9 @@ impl FileTableReader {
         )
     }
 
+    /// Slice and validate the FlatBuffers message at the given block
+    ///
+    /// Checks continuation + size
     fn slice_message(&self, blk: &IPCFileBlock) -> io::Result<&[u8]> {
         if blk.offset + 8 > self.data.len() {
             return Err(io::Error::new(

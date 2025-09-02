@@ -1,8 +1,39 @@
-//! High-level CSV Writer for Minarrow Tables and SuperTables.
+//! # CSV Writer
 //!
-//! Provides a `CsvWriter<W>` type wrapping any `io::Write`, with configurable
-//! delimiter, header, quoting, and null representation.  You can write a single
-//! `Table` or an entire `SuperTable` (multiple batches) conveniently.
+//! Utilities for serialising [`minarrow::Table`] and [`minarrow::SuperTable`] to CSV.
+//! Wraps any [`std::io::Write`] and streams rows with configurable options.
+//!
+//! ## Features
+//! - Pluggable destination: in-memory (`Vec<u8>`) or files (`std::fs::File`)
+//! - Configurable delimiter, header emission, and null representation via [`CsvEncodeOptions`]
+//! - RFC 4180–style quoting/escaping handled by the encoders
+//! - Write single tables or concatenate multi-batch [`SuperTable`]s - header on first batch only
+//!
+//! ## Quick start
+//! ```no_run
+//! # use minarrow::{Field, Table};
+//! # use minarrow::ArrowType::*;
+//! # use minarrow::Field as F;
+//! use minarrow_io::models::encoders::csv::{CsvEncodeOptions};
+//! use minarrow_io::io::csv_writer::CsvWriter;
+//!
+//! // In-memory
+//! let mut w = CsvWriter::new_vec();
+//! # let table = Table::default();
+//! w.write_table(&table)?;
+//! let bytes = w.into_inner(); // CSV bytes
+//!
+//! // To a file - default options
+//! let mut wf = CsvWriter::to_path("out.csv")?;
+//! wf.write_table(&table)?;
+//! wf.flush()?;
+//!
+//! // Custom options
+//! let opts = CsvEncodeOptions { delimiter: b';', null_repr: "NULL", ..Default::default() };
+//! let mut wc = CsvWriter::with_options(Vec::new(), opts);
+//! wc.write_table(&table)?;
+//! # Ok::<(), std::io::Error>(())
+//! ```
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -12,8 +43,39 @@ use minarrow::{SuperTable, Table};
 
 use crate::models::encoders::csv::{CsvEncodeOptions, encode_supertable_csv, encode_table_csv};
 
-/// `CsvWriter` wraps any `io::Write` and exposes methods to write
-/// Minarrow `Table` or `SuperTable` as CSV, using customizable options.
+/// A streaming CSV writer for [`minarrow::Table`] and [`minarrow::SuperTable`].
+///
+/// Wraps any type implementing [`std::io::Write`] and serialises rows to CSV
+/// using configurable options (`delimiter`, `null_repr`, header control, etc.).
+///
+/// ## Features
+/// - Works with arbitrary sinks: `Vec<u8>`, `File`, sockets, etc.
+/// - Customisable via [`CsvEncodeOptions`]
+/// - Supports both single-batch tables and multi-batch supertables
+///
+/// ## Example
+/// ```no_run
+/// use minarrow::Table;
+/// use minarrow_io::models::encoders::csv::CsvEncodeOptions;
+/// use minarrow_io::io::csv_writer::CsvWriter;
+///
+/// # let table = Table::default();
+///
+/// // In-memory writer with default options
+/// let mut w = CsvWriter::new_vec();
+/// w.write_table(&table).unwrap();
+/// let csv_bytes = w.into_inner();
+///
+/// // File writer with default options
+/// let mut wf = CsvWriter::to_path("out.csv").unwrap();
+/// wf.write_table(&table).unwrap();
+/// wf.flush().unwrap();
+///
+/// // Custom options
+/// let opts = CsvEncodeOptions { delimiter: b';', null_repr: "NULL", ..Default::default() };
+/// let mut wc = CsvWriter::with_options(Vec::new(), opts);
+/// wc.write_table(&table).unwrap();
+/// ```
 pub struct CsvWriter<W: Write> {
     writer: W,
     options: CsvEncodeOptions,
@@ -45,15 +107,15 @@ impl<W: Write> CsvWriter<W> {
 
     /// Write a single `Table` as CSV to the underlying writer.
     ///
-    /// This writes headers (if enabled) and all rows, then leaves the writer
+    /// This writes headers if enabled and all rows, then leaves the writer
     /// ready for more writes or flushing.
     pub fn write_table(&mut self, table: &Table) -> io::Result<()> {
         encode_table_csv(table, &mut self.writer, &self.options)
     }
 
-    /// Write a `SuperTable` (multiple batches) as CSV.
+    /// Write a `SuperTable` (i.e. multiple batches) as CSV.
     ///
-    /// Only the first batch will include headers (if enabled); subsequent
+    /// Only the first batch will include headers if enabled; subsequent
     /// batches are concatenated without headers.
     pub fn write_supertable(&mut self, st: &SuperTable) -> io::Result<()> {
         encode_supertable_csv(st, &mut self.writer, &self.options)
@@ -66,14 +128,14 @@ impl<W: Write> CsvWriter<W> {
 }
 
 impl CsvWriter<File> {
-    /// Convenience: open the given file path and return a `CsvWriter<File>`
+    /// Open the given file path and return a `CsvWriter<File>`
     /// using default options.
     pub fn to_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let file = File::create(path)?;
         Ok(Self::new(file))
     }
 
-    /// Convenience: open the given file path and return a `CsvWriter<File>`
+    /// Open the given file path and return a `CsvWriter<File>`
     /// with custom options.
     pub fn to_path_with_options<P: AsRef<Path>>(
         path: P,

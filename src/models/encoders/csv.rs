@@ -3,11 +3,9 @@
 //! - Supports custom delimiter, header row, quoting, and null representation.
 //! - Serialises a Table or SuperTable to any Write or Vec<u8>.
 
-use std::io::{self, Write};
-
-use minarrow::{Array, Bitmask, NumericArray, SuperTable, Table, TextArray};
-
 use crate::debug_println;
+use minarrow::{Array, Bitmask, NumericArray, SuperTable, Table, TextArray};
+use std::io::{self, Write};
 
 /// Options for CSV encoding.
 #[derive(Debug, Clone)]
@@ -63,7 +61,7 @@ fn escape_and_quote<'a>(s: &'a str, delimiter: u8, quote: u8) -> String {
     }
 }
 
-/// Serialises a Minarrow Table to any `Write` as CSV.
+/// Serialises a Minarrow `Table` (i.e., Arrow `RecordBatch`) to any `Write` as CSV.
 /// - Supports custom delimiter, null representation, header.
 /// - Escapes/quotes fields as needed.
 /// - Errors propagate from writer.
@@ -142,7 +140,7 @@ pub fn encode_table_csv<W: Write>(
         }
     }
 
-    // Categorical: build unique value tables if needed (for fast lookup)
+    // Categorical - build unique value tables if needed for fast lookup
     let mut cat_maps: Vec<Option<&[String]>> = Vec::with_capacity(table.cols.len());
     for col in &table.cols {
         match &col.array {
@@ -170,14 +168,12 @@ pub fn encode_table_csv<W: Write>(
             if col_idx > 0 {
                 writer.write_all(&[delimiter])?;
             }
-            // Null check - optimize for common case of no nulls
-            // Note: There's a minarrow bug where FieldArray.null_count may be wrong
-            // but the optimization still works when null_count == 0
+            // Null check - optimise for common case of no nulls
             let is_null = if col.null_count == 0 {
                 false // Definitely no nulls, skip expensive mask operations
             } else {
                 match null_masks[col_idx] {
-                    Some(mask) => !mask.get(row), // Arrow: 1=valid, 0=null
+                    Some(mask) => !mask.get(row), // 1=valid, 0=null
                     None => false,
                 }
             };
@@ -350,7 +346,7 @@ pub fn encode_table_csv<W: Write>(
     Ok(())
 }
 
-/// Serialises a SuperTable as CSV (all batches concatenated).  
+/// Serialises a *Minarrow* `SuperTable` (i.e., *Arrow* multiple *RecordBatches*) as a CSV, with all batches concatenated.  
 /// Each batch will write headers only if `write_header` is set and is the first batch.
 /// Use for multi-batch output.
 ///

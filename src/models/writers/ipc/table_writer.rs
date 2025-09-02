@@ -1,4 +1,19 @@
-// src/io/table_writer.rs
+//! # Asynchronous Arrow Table Writer
+//!
+//! High-level API for writing [`minarrow::Table`] values to files or streams
+//! in Arrow IPC format using its `File` or `Stream` protocols.
+//!
+//! ## Features
+//! - Wraps [`GTableSink`] for Arrow IPC framing and schema management
+//! - Supports optional compression
+//! - Automatically registers categorical dictionaries
+//! - Provides helpers for writing one or many tables to disk
+//!
+//! ## Typical usage
+//! - Create with [`TableWriter::new`] or [`TableWriter::with_compression`]  
+//! - Optionally register dictionaries with [`TableWriter::register_dictionary`]  
+//! - Write tables using [`TableWriter::write_table`] or [`TableWriter::write_all_tables`]  
+//! - Finalise with [`TableWriter::finish`]  
 
 use std::io;
 

@@ -1,15 +1,23 @@
+//! # TLV Frame Encoder
+//!
+//! Encodes Type–Length–Value frames with a 1-byte type and a little-endian `u32` length,
+//! writing into any [`StreamBuffer`].
+//!
+//! No alignment padding is added.
+
 use crate::models::frames::tlv_frame::TLVFrame;
 use crate::traits::frame_encoder::FrameEncoder;
 use crate::traits::stream_buffer::StreamBuffer;
 use std::io;
 
+/// Stateless encoder for TLV frames - type `u8`, length `u32` LE, then value.
 pub struct TLVEncoder;
 
 impl FrameEncoder for TLVEncoder {
     type Frame<'a> = TLVFrame<'a>;
     type Metadata = ();
 
-    /// Encode a TLV frame as [type (1 byte)] [length (4 LE bytes)] [value bytes]
+    /// Encode a TLV frame as `[type (1 byte)] [length (4 LE bytes)] [value bytes]`.
     fn encode<'a, B: StreamBuffer>(
         global_offset: &mut usize,
         frame: &Self::Frame<'a>,
@@ -29,11 +37,6 @@ impl FrameEncoder for TLVEncoder {
         *global_offset += 5; // type (1) + length (4)
         out.extend_from_slice(frame.value);
         *global_offset += frame.value.len();
-
-        // Note: TLV padding is intentionally not implemented here as TLV is meant to be
-        // a simple wire format. Alignment padding would be more appropriate at a higher
-        // level protocol layer if needed for specific use cases (e.g., when embedding
-        // TLV frames within Arrow IPC contexts).
 
         Ok((out, ()))
     }

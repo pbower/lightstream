@@ -1,8 +1,19 @@
-//! Parquet Table reader
+//! # Parquet table reader - *reads into `minarrow::Table`*
 //!
-//! * V2 + legacy V1
-//! * RLE / bit-packed hybrid decoder for levels & categorical (dictionary) indices
-//! * Snappy and Zstd compression
+//! ## Overview
+//! - Supports DataPageV2 and legacy V1 Parquet layouts
+//! - Decodes hybrid RLE/bit-packed definition levels and dictionary indices
+//! - Handles `PLAIN` and `RLE_DICTIONARY` value encodings
+//! - Optional feature-gated Snappy / Zstd compression
+//! - Type mapping to Arrow/Minarrow - {i32, i64, u32, u64, f32, f64, bool, utf8
+//!   dictionary<u32/u64 (feature-flagged)>, and date32/date64 via `datetime` feature}
+//! - No nested type support
+//! - Works with any `Read + Seek`
+//! - Reads into memory - no mmap zero-copy like IPC at the present time.
+//!
+//! ## Outputs
+//! On success returns a fully materialised `Table`; otherwise yields an `IOError`
+//! for malformed footers/headers, unsupported encodings, or truncated pages.
 
 use std::collections::BTreeMap;
 use std::convert::TryInto;

@@ -1,3 +1,17 @@
+//! # Asynchronous TLV sink
+//!
+//! Wraps any `AsyncWrite` and streams Type–Length–Value (TLV) frames produced
+//! by [`TLVStreamWriter`].
+//!
+//! ## Overview:
+//! - Encodes frames as `[type: u8][length: u32 LE][value: bytes]`.
+//! - Works with both 8-byte (`Vec<u8>`) and 64-byte SIMD-aligned (`Vec64<u8>`) buffers
+//!   via the generic `B: StreamBuffer`.
+//! - Supports backpressure-friendly, chunked writes with partial-write handling in
+//!   async runtimes (e.g. Tokio).
+//! - Provides `write_frame` for manual queuing of frames and `finish` to signal
+//!   end-of-stream.
+
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
