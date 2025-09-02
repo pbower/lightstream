@@ -135,3 +135,33 @@ pub fn unpack_bits(buf: &[u8], len: usize) -> Vec<bool> {
         .map(|i| ((buf[i / 8] >> (i % 8)) & 1) != 0)
         .collect()
 }
+
+// =============================================================================
+// SharedSliceWrapper - Temporary workaround for SIMD alignment preservation
+// =============================================================================
+// TODO: Use MinArrow SharedBuffer directly and test zero-copy.
+
+use std::sync::Arc;
+use minarrow::SharedBuffer;
+
+/// Wrapper around SharedBuffer that preserves 64-byte alignment for memory-mapped data.
+/// This is a temporary workaround until SharedBuffer::from_owner properly preserves alignment.
+pub struct SharedSliceWrapper {
+    inner: SharedBuffer,
+}
+
+impl SharedSliceWrapper {
+    pub fn new(data: Arc<[u8]>) -> Self {
+        Self {
+            inner: SharedBuffer::from_owner(data),
+        }
+    }
+
+    pub fn slice(&self, offset: usize, len: usize) -> SharedBuffer {
+        self.inner.slice(offset..offset + len)
+    }
+
+    pub fn into_shared_buffer(self) -> SharedBuffer {
+        self.inner
+    }
+}

@@ -21,6 +21,9 @@
 //!
 //! See the [Apache Arrow IPC specification](https://arrow.apache.org/docs/format/Columnar.html#ipc-streaming-format).
 
+//! RecordBatch → Table decoder supporting Minarrow fixed‑width, Boolean,
+//! UTF‑8, LargeUTF‑8, and Dictionary columns.
+
 use std::io;
 use std::sync::Arc;
 
@@ -57,6 +60,7 @@ impl RecordBatchParser {
             ));
         }
 
+        // TODO: Compression handling
         if let Some(BodyCompression { .. }) = message
             .header_as_record_batch()
             .and_then(|rb| rb.compression())
@@ -1034,9 +1038,9 @@ pub(crate) fn handle_record_batch(
                     data_slice.len(),
                     body.len(),
                 )?;
-                // When large_string feature is enabled, distinguish between actual u64 and u32 offset data
+                // Check if this is actually u32 offset data misidentified as LargeString
                 if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
-                    // Buffer size indicates u32 offsets, parse as String32
+                    // Likely u32 offsets, parse as String32 instead
                     let offs_u32 = cast_slice::<u32>(offs_slice);
                     let arr = TextArray::String32(
                         StringArray::new(
@@ -1048,7 +1052,7 @@ pub(crate) fn handle_record_batch(
                     );
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 } else {
-                    // Buffer size indicates u64 offsets for LargeString
+                    // Actual u64 offsets
                     let offs = cast_slice::<u64>(offs_slice);
                     let arr = TextArray::String64(
                         StringArray::new(
@@ -1504,16 +1508,20 @@ where
                     body.len(),
                 )?;
 
-                push_boolean_col_shared(
-                    &mut cols,
-                    field,
-                    data_slice,
-                    data_offset,
-                    n_rows,
+                // For boolean, we still need to copy as it's bit-packed
+                let arr = BooleanArray {
+                    data: Bitmask {
+                        bits: minarrow::Buffer::from(Vec64::from_slice(data_slice)),
+                        len: n_rows,
+                    },
+                    len: n_rows,
                     null_mask,
-                    &arc_data,
-                    body_offset,
-                );
+                    _phantom: PhantomData,
+                };
+                cols.push(FieldArray::new(
+                    field.clone(),
+                    Array::BooleanArray(arr.into()),
+                ));
             }
             ArrowType::String => {
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
@@ -1541,17 +1549,37 @@ where
                 // Create shared buffers for string data using SharedBuffer
                 use minarrow::structs::shared_buffer::SharedBuffer;
 
-                let bytes: &[u8] = arc_data.as_ref().as_ref();
-                let arc_bytes: Arc<[u8]> = Arc::from(bytes);
-                let full_shared = SharedBuffer::from_owner(arc_bytes);
-                let data_shared = full_shared.slice(
-                    (body_offset + data_offset)..(body_offset + data_offset + data_slice.len()),
-                );
+                struct SliceWrapper<M: ?Sized> {
+                    _owner: Arc<M>,
+                    offset: usize,
+                    len: usize,
+                }
+
+                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+                    fn as_ref(&self) -> &[u8] {
+                        let full = self._owner.as_ref();
+                        let slice = full.as_ref();
+                        &slice[self.offset..self.offset + self.len]
+                    }
+                }
+
+                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+
+                let data_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + data_offset,
+                    len: data_slice.len(),
+                };
+                let data_shared = SharedBuffer::from_owner(data_wrapper);
                 let data_buf = minarrow::Buffer::from_shared(data_shared);
 
-                let offs_shared = full_shared.slice(
-                    (body_offset + offs_offset)..(body_offset + offs_offset + offs_slice.len()),
-                );
+                let offs_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + offs_offset,
+                    len: offs_slice.len(),
+                };
+                let offs_shared = SharedBuffer::from_owner(offs_wrapper);
                 let offs_buf: minarrow::Buffer<u32> = minarrow::Buffer::from_shared(offs_shared);
 
                 let arr =
@@ -1585,20 +1613,40 @@ where
                 // Create shared buffers for string data using SharedBuffer
                 use minarrow::structs::shared_buffer::SharedBuffer;
 
-                let bytes: &[u8] = arc_data.as_ref().as_ref();
-                let arc_bytes: Arc<[u8]> = Arc::from(bytes);
-                let full_shared = SharedBuffer::from_owner(arc_bytes);
-                let data_shared = full_shared.slice(
-                    (body_offset + data_offset)..(body_offset + data_offset + data_slice.len()),
-                );
+                struct SliceWrapper<M: ?Sized> {
+                    _owner: Arc<M>,
+                    offset: usize,
+                    len: usize,
+                }
+
+                impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+                    fn as_ref(&self) -> &[u8] {
+                        let full = self._owner.as_ref();
+                        let slice = full.as_ref();
+                        &slice[self.offset..self.offset + self.len]
+                    }
+                }
+
+                unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+                unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+
+                let data_wrapper = SliceWrapper {
+                    _owner: arc_data.clone(),
+                    offset: body_offset + data_offset,
+                    len: data_slice.len(),
+                };
+                let data_shared = SharedBuffer::from_owner(data_wrapper);
                 let data_buf = minarrow::Buffer::from_shared(data_shared);
 
-                // When large_string feature is enabled, distinguish between actual u64 and u32 offset data
+                // Check if this is actually u32 offset data misidentified as LargeString
                 if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
-                    // Buffer size indicates u32 offsets, parse as String32
-                    let offs_shared = full_shared.slice(
-                        (body_offset + offs_offset)..(body_offset + offs_offset + offs_slice.len()),
-                    );
+                    // Likely u32 offsets, parse as String32 instead
+                    let offs_wrapper = SliceWrapper {
+                        _owner: arc_data.clone(),
+                        offset: body_offset + offs_offset,
+                        len: offs_slice.len(),
+                    };
+                    let offs_shared = SharedBuffer::from_owner(offs_wrapper);
                     let offs_buf: minarrow::Buffer<u32> =
                         minarrow::Buffer::from_shared(offs_shared);
 
@@ -1606,10 +1654,13 @@ where
                         TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
                 } else {
-                    // Buffer size indicates u64 offsets for LargeString
-                    let offs_shared = full_shared.slice(
-                        (body_offset + offs_offset)..(body_offset + offs_offset + offs_slice.len()),
-                    );
+                    // Actual u64 offsets
+                    let offs_wrapper = SliceWrapper {
+                        _owner: arc_data.clone(),
+                        offset: body_offset + offs_offset,
+                        len: offs_slice.len(),
+                    };
+                    let offs_shared = SharedBuffer::from_owner(offs_wrapper);
                     let offs_buf: minarrow::Buffer<u64> =
                         minarrow::Buffer::from_shared(offs_shared);
 
@@ -1882,8 +1933,6 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
         }
         #[cfg(not(feature = "large_string"))]
         fb::Type::Utf8 => Ok(ArrowType::String),
-        #[cfg(feature = "large_string")]
-        fb::Type::Utf8 => Ok(ArrowType::LargeString),
         fb::Type::FloatingPoint => {
             let f = fb_field.type__as_floating_point().ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "missing FloatingPoint type")
@@ -1905,6 +1954,8 @@ fn extract_base_type(fb_field: &fb::Field) -> io::Result<ArrowType> {
             convert_date_unit_fb(d.unit())
         }
         fb::Type::Bool => Ok(ArrowType::Boolean),
+        #[cfg(feature = "large_string")]
+        fb::Type::Utf8 => Ok(ArrowType::LargeString),
         other => {
             if let Some(dict) = fb_field.dictionary() {
                 let idx_ty = extract_categorical_index_type(dict.indexType().as_ref())?;
@@ -2022,96 +2073,48 @@ fn push_numeric_col_shared<T, M: ?Sized>(
     M: AsRef<[u8]> + Send + Sync + 'static,
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
-
+    
     let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
-    debug_println!(
-        "Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}",
-        field.name,
-        body_offset,
-        data_offset,
-        final_addr,
-        final_addr % 64 == 0
-    );
+    debug_println!("Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}", 
+                  field.name, body_offset, data_offset, final_addr, final_addr % 64 == 0);
+
+    // Create a wrapper that references the slice we need
+    struct SliceWrapper<M: ?Sized> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+
+    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = self._owner.as_ref();
+            let slice = full.as_ref();
+            &slice[self.offset..self.offset + self.len]
+        }
+    }
+
+    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
 
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
 
-    // Convert Arc<M> to Arc<[u8]> and use existing SharedBuffer slice method
-    let bytes: &[u8] = arc_data.as_ref().as_ref();
-    let arc_bytes: Arc<[u8]> = Arc::from(bytes);
-    let full_shared = SharedBuffer::from_owner(arc_bytes);
-    let shared = full_shared.slice(absolute_offset..absolute_offset + byte_len);
-    debug_println!(
-        "SharedBuffer pointer for {}: {:p}, aligned: {}",
-        field.name,
-        shared.as_slice().as_ptr(),
-        shared.as_slice().as_ptr() as usize % 64 == 0
-    );
+    let wrapper = SliceWrapper {
+        _owner: arc_data.clone(),
+        offset: absolute_offset,
+        len: byte_len,
+    };
+
+    let shared = SharedBuffer::from_owner(wrapper);
+    debug_println!("SharedBuffer pointer for {}: {:p}, aligned: {}", 
+                  field.name, shared.as_slice().as_ptr(), 
+                  shared.as_slice().as_ptr() as usize % 64 == 0);
     let data = minarrow::Buffer::from_shared(shared);
 
     let arr = Arc::new(IntegerArray { data, null_mask });
     cols.push(FieldArray::new(
         field.clone(),
         Array::NumericArray(make_array(arr)),
-    ));
-}
-
-/// Appends a boolean column to the columns vector using shared buffer when possible.
-///
-/// Follows the same zero-copy pattern as numeric types - uses SharedBuffer when alignment allows,
-/// falls back to copying when necessary.
-fn push_boolean_col_shared<M: ?Sized>(
-    cols: &mut Vec<FieldArray>,
-    field: &Field,
-    data_slice: &[u8],
-    data_offset: usize,
-    n_rows: usize,
-    null_mask: Option<Bitmask>,
-    arc_data: &Arc<M>,
-    body_offset: usize,
-) where
-    M: AsRef<[u8]> + Send + Sync + 'static,
-{
-    use minarrow::structs::shared_buffer::SharedBuffer;
-    let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
-    debug_println!(
-        "Boolean buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}",
-        field.name,
-        body_offset,
-        data_offset,
-        final_addr,
-        final_addr % 64 == 0
-    );
-
-    let absolute_offset = body_offset + data_offset;
-    let byte_len = data_slice.len();
-
-    // Convert Arc<M> to Arc<[u8]> and use existing SharedBuffer slice method
-    let bytes: &[u8] = arc_data.as_ref().as_ref();
-    let arc_bytes: Arc<[u8]> = Arc::from(bytes);
-    let full_shared = SharedBuffer::from_owner(arc_bytes);
-    let shared = full_shared.slice(absolute_offset..absolute_offset + byte_len);
-    debug_println!(
-        "SharedBuffer pointer for {}: {:p}, aligned: {}",
-        field.name,
-        shared.as_slice().as_ptr(),
-        shared.as_slice().as_ptr() as usize % 64 == 0
-    );
-
-    let bits_buffer = minarrow::Buffer::from_shared(shared);
-    let bool_data = Bitmask {
-        bits: bits_buffer,
-        len: n_rows,
-    };
-    let arr = BooleanArray {
-        data: bool_data,
-        len: n_rows,
-        null_mask,
-        _phantom: PhantomData,
-    };
-    cols.push(FieldArray::new(
-        field.clone(),
-        Array::BooleanArray(arr.into()),
     ));
 }
 
@@ -2157,14 +2160,33 @@ fn push_float_col_shared<T, M: ?Sized>(
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
 
+    struct SliceWrapper<M: ?Sized> {
+        _owner: Arc<M>,
+        offset: usize,
+        len: usize,
+    }
+
+    impl<M: AsRef<[u8]> + ?Sized> AsRef<[u8]> for SliceWrapper<M> {
+        fn as_ref(&self) -> &[u8] {
+            let full = self._owner.as_ref();
+            let slice = full.as_ref();
+            &slice[self.offset..self.offset + self.len]
+        }
+    }
+
+    unsafe impl<M: Send + Sync + ?Sized> Send for SliceWrapper<M> {}
+    unsafe impl<M: Send + Sync + ?Sized> Sync for SliceWrapper<M> {}
+
     let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
 
-    // Convert Arc<M> to Arc<[u8]> and use existing SharedBuffer slice method
-    let bytes: &[u8] = arc_data.as_ref().as_ref();
-    let arc_bytes: Arc<[u8]> = Arc::from(bytes);
-    let full_shared = SharedBuffer::from_owner(arc_bytes);
-    let shared = full_shared.slice(absolute_offset..absolute_offset + byte_len);
+    let wrapper = SliceWrapper {
+        _owner: arc_data.clone(),
+        offset: absolute_offset,
+        len: byte_len,
+    };
+
+    let shared = SharedBuffer::from_owner(wrapper);
     let data = minarrow::Buffer::from_shared(shared);
 
     let arr = Arc::new(FloatArray { data, null_mask });
