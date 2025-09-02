@@ -1,8 +1,8 @@
-# Lightstream – *Move your data at lightspeed*
+# Lightstream – *Drive your data at lightspeed*
 
 ## Intro
 
-**Lightstream** provides composable building blocks for high-performance data I/O in Rust.
+**Lightstream** gives you access to composable building blocks for high-performance data I/O in Rust.
 It extends [Minarrow](https://crates.io/crates/minarrow) with a set of modular, format-aware components for:
 - High-performance asynchronous Arrow IPC streaming and file writing
 - Framed decoders and sinks for `IPC`, `TLV`, `CSV`, and opt-in `Parquet`
@@ -11,9 +11,10 @@ It extends [Minarrow](https://crates.io/crates/minarrow) with a set of modular, 
 - 64-byte SIMD aligned readers and writers *(the only Arrow crate that provides this in 2025)*
 
 ## Design Principles
-- **Customisable** - ***You own the buffer*** – No hidden buffering or lifecycle surprises. All streaming is pull-based or sink-driven.
+- **Customisable** - ***You own the buffer*** – Plug your buffer. All streaming is pull-based or sink-driven.
 - **Composable** - ***Layerable codecs*** – Each encoder, decoder, sink, and stream adapter is layerable, and your bytestream propagates up.
 - **Control** - ***Wire-level framing*** – Arrow IPC, TLV, CSV, and Parquet handled at the transport boundary, not fused into business logic.
+- **Compatible** - native streaming on futures, and Tokio.
 - **Power** - **64-byte aligned by default** – All buffers use 64-byte aligned memory via [`Vec64`] for deterministic SIMD - not re-allocating
 during hotloop calculations where you need it fast.
 - **Extensible** - all primitives are provided to create your own data wire formats, and customise it to your stack. We also welcome contributions.
