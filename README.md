@@ -8,16 +8,15 @@ It extends [Minarrow](https://crates.io/crates/minarrow) with a set of modular, 
 - Framed decoders and sinks for `IPC`, `TLV`, `CSV`, and opt-in `Parquet`
 - Zero-Copy memory-mapped Arrow file reads
 - Direct Tokio integration with zero-copy buffers
-- 64-byte SIMD aligned readers and writers *(the only Arrow crate that provides this in 2025)*
+- 64-byte SIMD aligned readers and writers *(the only Arrow-compatible crate that provides this in 2025)*
 
 ## Design Principles
 - **Customisable** - ***You own the buffer*** – Plug your buffer. All streaming is pull-based or sink-driven.
 - **Composable** - ***Layerable codecs*** – Each encoder, decoder, sink, and stream adapter is layerable, and your bytestream propagates up.
 - **Control** - ***Wire-level framing*** – Arrow IPC, TLV, CSV, and Parquet handled at the transport boundary, not fused into business logic.
 - **Compatible** - native streaming on futures, and Tokio.
-- **Power** - **64-byte aligned by default** – All buffers use 64-byte aligned memory via [`Vec64`] for deterministic SIMD - not re-allocating
-during hotloop calculations where you need it fast.
-- **Extensible** - all primitives are provided to create your own data wire formats, and customise it to your stack. We also welcome contributions.
+- **Power** - ***64-byte aligned by default*** – All buffers use 64-byte aligned memory via [`Vec64`] supporting deterministic SIMD - not re-allocating during hotloop calculations where you need it fast.
+- **Extensible** - all primitive batteries are included to create your own data wire formats, and customise it to your stack. We also welcome format contributions, as all the base structures and patterns are in-place.
 
 ## Layered Abstractions
 
@@ -29,9 +28,9 @@ during hotloop calculations where you need it fast.
 | Streaming                | `GenByteStream`, `Sink`        | ✅ |
 | Formats                  | IPC, Parquet, CSV, TLV         | ✅ |
 
-Each layer is available as a trait + reference implementation. You can plug in your own framing, buffering, or encoding logic without rewriting the rest of the stack. 
+And more. Each layer is available as a trait + reference implementation. You can plug in your own framing, buffering, or encoding logic without rewriting the rest of the stack. 
 
-**These slot into the Table Writers and Readers directly, so you have complete control of your stack.**
+**These slot into the Table Writers and Readers directly, so you have control of your stack and for high-performance wire formats.**
 
 ---
 
@@ -51,7 +50,7 @@ Each layer is available as a trait + reference implementation. You can plug in y
   Streaming CSV readers and writers for Arrow/Minarrow `Table` and `SuperTable`. Handles headers, nulls, and custom delimiter/null-representation options.  
 
 - **Memory Maps**  
-  Page-aligned, 64-byte-aligned `MemMap<ALIGN>` with safe `Deref<[u8]>` access. Ultra-fast zero-copy file ingestion for SIMD-ready analytics.  
+  Read millions of rows in microseconds. Ultra-fast, zero-copy, 64-byte- aligned file ingestion for SIMD-ready analytics.  
 
 ---
 
@@ -119,47 +118,30 @@ async fn main() -> std::io::Result<()> {
 }
 ```
 
----
+## Optional Features
 
-## Crate Layout
-
-lightstream
-├── traits # Core abstractions (buffers, encoders, streams)
-├── models
-│ ├── encoders # IPC, TLV, Parquet, CSV
-│ ├── decoders # Parsers + streaming decoders
-│ ├── sinks # Async sinks for tables + frames
-│ ├── readers # Structured format readers
-│ ├── writers # Structured format writers
-│ ├── streams # Disk, framed, mmap
-│ ├── frames # Framing types (IPC, TLV)
-│ └── mmap # Page-aligned file mapping
-├── arrow # Arrow schema + message utilities
-├── compression # Snappy + Zstd codecs
-├── enums # IPC protocols, decode results, etc.
-├── utils # Dictionary extraction, helpers
-
----
-
-## Feature Flags
-
-- `parquet` – Parquet writer support  
-- `mmap` – Memory-mapped file support  
-- `zstd` – Zstd compression  
-- `snappy` – Snappy compression  
+- `parquet` – Parquet writer  
+- `mmap` – Memory-mapped files  
+- `zstd` – Zstd compression (IPC + Parquet)
+- `snappy` – Snappy compression (IPC + Parquet)
 
 ---
 
 ## Use Cases
 
 - Stream Arrow IPC tables over network sockets  
-- Build custom binary protocols
+- Integrate custom binary data transport protocols
 - Fast reads: Ultra-fast file ingestion with zero-copy mmap
-- Analytics: SIMD-aligned Arrow IPC Writers/Readers *(i.e., avoid SIMD re-allocations downstream)*
+- Analytics: SIMD-aligned Arrow IPC Writers/Readers, to avoid SIMD re-allocations downstream
 - Async pipelines with backpressure-aware sinks + streams  
 
 ---
 
 ## License
 
-MIT  
+This project is licensed under the MIT License. See the LICENCE file for full terms, and THIRD_PARTY_LICENSES for licences related to Apache-licensed software.
+
+## Affiliation Notice
+
+This project is not affiliated with Apache Arrow or the Apache Software Foundation.
+It provides serialisation of the public Arrow format through a custom implementation, MinArrow, while leveraging Flatbuffers schemas from the official Arrow-RS project for schema type generation.
