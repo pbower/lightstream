@@ -37,6 +37,7 @@ use crate::arrow::message::org::apache::arrow::flatbuf::{
 };
 use crate::utils::SliceWrapper;
 use crate::{AFMessage, AFMessageHeader, debug_println};
+use crate::compression::{Compression, decompress};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -526,6 +527,39 @@ impl RecordBatchParser {
         Ok((&arrow_buf[offset..offset + length], offset))
     }
 
+    /// Extract buffer slice with corrected offsets for decompressed data
+    #[inline]
+    pub fn extract_buffer_slice_with_offsets<'a>(
+        fbuf_meta: &Vector<'a, Buffer>,
+        buffer_idx: &mut usize,
+        arrow_buf: &'a [u8],
+        corrected_offsets: &[usize],
+        field_name: &str,
+    ) -> io::Result<(&'a [u8], usize)> {
+        let buf = fbuf_meta.get(*buffer_idx);
+        let current_buffer_idx = *buffer_idx;
+        *buffer_idx += 1;
+
+        if current_buffer_idx >= corrected_offsets.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Buffer index {} out of range for corrected offsets", current_buffer_idx),
+            ));
+        }
+
+        let offset = corrected_offsets[current_buffer_idx];
+        let length = buf.length() as usize;
+
+        if offset + length > arrow_buf.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Buffer out of bounds for {} (corrected offset)", field_name),
+            ));
+        }
+
+        Ok((&arrow_buf[offset..offset + length], offset))
+    }
+
     /// Turn a raw byte‑slice into a `Buffer<T>`.
     ///
     /// * If the bytes are properly aligned **and** we have an `Arc`,
@@ -801,6 +835,16 @@ pub(crate) fn handle_record_batch(
     let mut cols = Vec::with_capacity(fields.len());
     let n_rows = nodes.get(0).length() as usize;
 
+    // Helper closure - not needed for regular function but defined for consistency
+    let mut extract_buffer_slice = |buffer_idx: &mut usize, field_name: &str| -> io::Result<(&[u8], usize)> {
+        RecordBatchParser::extract_buffer_slice(
+            &buffers,
+            buffer_idx,
+            body,
+            field_name,
+        )
+    };
+
     for (col_idx, field) in fields.iter().enumerate() {
         eprintln!(
             "DEBUG handle_record_batch: Processing field {} ({}), type {:?}",
@@ -821,12 +865,7 @@ pub(crate) fn handle_record_batch(
         match &field.dtype {
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i8>(
                     &mut cols,
@@ -838,12 +877,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u8>(
                     &mut cols,
@@ -855,12 +889,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i16>(
                     &mut cols,
@@ -872,12 +901,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u16>(
                     &mut cols,
@@ -888,12 +912,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::Int32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i32>(
                     &mut cols,
@@ -904,12 +923,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::UInt32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u32>(
                     &mut cols,
@@ -920,12 +934,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::Int64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i64>(
                     &mut cols,
@@ -936,12 +945,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::UInt64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<u64>(
                     &mut cols,
@@ -952,12 +956,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::Float32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col::<f32>(
                     &mut cols,
@@ -968,12 +967,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::Float64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col::<f64>(
                     &mut cols,
@@ -984,12 +978,7 @@ pub(crate) fn handle_record_batch(
                 );
             }
             ArrowType::Boolean => {
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1012,18 +1001,8 @@ pub(crate) fn handle_record_batch(
                 ));
             }
             ArrowType::String => {
-                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (offs_slice, offs_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_two_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1060,18 +1039,8 @@ pub(crate) fn handle_record_batch(
             #[cfg(feature = "large_string")]
             ArrowType::LargeString => {
                 eprintln!("DEBUG: About to extract offset buffer for field '{}'", field.name);
-                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (offs_slice, offs_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_two_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1125,12 +1094,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "datetime")]
             ArrowType::Date32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i32>(
                     &mut cols,
@@ -1142,12 +1106,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "datetime")]
             ArrowType::Date64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col::<i64>(
                     &mut cols,
@@ -1171,12 +1130,7 @@ pub(crate) fn handle_record_batch(
                         ));
                     }
                 };
-                let (idx_slice, idx_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (idx_slice, idx_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1293,11 +1247,17 @@ where
     let buffers = rec
         .buffers()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
+    
     let mut buffer_idx = 0;
     let mut cols = Vec::with_capacity(fields.len());
     let n_rows = nodes.get(0).length() as usize;
     let full_data = arc_data.as_ref().as_ref();
     let body = &full_data[body_offset..body_offset + body_len];
+
+    // Helper closure to extract buffer slices
+    let extract_buffer_slice = |buffer_idx: &mut usize, field_name: &str| -> io::Result<(&[u8], usize)> {
+        RecordBatchParser::extract_buffer_slice(&buffers, buffer_idx, body, field_name)
+    };
 
     for (col_idx, field) in fields.iter().enumerate() {
         eprintln!(
@@ -1319,12 +1279,7 @@ where
         match &field.dtype {
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i8, M>(
                     &mut cols,
@@ -1339,12 +1294,7 @@ where
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt8 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u8, M>(
                     &mut cols,
@@ -1359,12 +1309,7 @@ where
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::Int16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i16, M>(
                     &mut cols,
@@ -1379,12 +1324,7 @@ where
             }
             #[cfg(feature = "extended_numeric_types")]
             ArrowType::UInt16 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u16, M>(
                     &mut cols,
@@ -1398,12 +1338,7 @@ where
                 );
             }
             ArrowType::Int32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i32, M>(
                     &mut cols,
@@ -1417,12 +1352,7 @@ where
                 );
             }
             ArrowType::UInt32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u32, M>(
                     &mut cols,
@@ -1436,12 +1366,7 @@ where
                 );
             }
             ArrowType::Int64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i64, M>(
                     &mut cols,
@@ -1455,12 +1380,7 @@ where
                 );
             }
             ArrowType::UInt64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<u64, M>(
                     &mut cols,
@@ -1474,12 +1394,7 @@ where
                 );
             }
             ArrowType::Float32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col_shared::<f32, M>(
                     &mut cols,
@@ -1493,12 +1408,7 @@ where
                 );
             }
             ArrowType::Float64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_float_col_shared::<f64, M>(
                     &mut cols,
@@ -1513,12 +1423,7 @@ where
             }
             #[cfg(feature = "datetime")]
             ArrowType::Date32 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i32, M>(
                     &mut cols,
@@ -1533,12 +1438,7 @@ where
             }
             #[cfg(feature = "datetime")]
             ArrowType::Date64 => {
-                let (data_slice, data_off) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_off) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(&field.name, col_idx, data_off, data_slice.len(), body.len())?;
                 push_numeric_col_shared::<i64, M>(
                     &mut cols,
@@ -1552,12 +1452,7 @@ where
                 );
             }
             ArrowType::Boolean => {
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1582,18 +1477,8 @@ where
                 ));
             }
             ArrowType::String => {
-                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (offs_slice, offs_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_two_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1631,18 +1516,8 @@ where
             #[cfg(feature = "large_string")]
             ArrowType::LargeString => {
                 eprintln!("DEBUG: About to extract offset buffer for field '{}'", field.name);
-                let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
-                let (data_slice, data_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (offs_slice, offs_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
+                let (data_slice, data_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_two_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -1723,12 +1598,7 @@ where
                         ));
                     }
                 };
-                let (idx_slice, idx_offset) = RecordBatchParser::extract_buffer_slice(
-                    &buffers,
-                    &mut buffer_idx,
-                    body,
-                    &field.name,
-                )?;
+                let (idx_slice, idx_offset) = extract_buffer_slice(&mut buffer_idx, &field.name)?;
                 check_buffer_bounds(
                     &field.name,
                     col_idx,
@@ -2114,13 +1984,13 @@ fn push_numeric_col_shared<T, M: ?Sized>(
 {
     use minarrow::structs::shared_buffer::SharedBuffer;
     
-    let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + body_offset + data_offset;
-    debug_println!("Numeric buffer {} - body_offset: {}, data_offset: {}, final_addr: 0x{:x}, aligned: {}", 
-                  field.name, body_offset, data_offset, final_addr, final_addr % 64 == 0);
+    let absolute_offset = body_offset + data_offset;
+    let final_addr = arc_data.as_ref().as_ref().as_ptr() as usize + absolute_offset;
+    
+    debug_println!("Numeric buffer {} - body_offset: {}, data_offset: {}, absolute_offset: {}, final_addr: 0x{:x}, aligned: {}", 
+                  field.name, body_offset, data_offset, absolute_offset, final_addr, final_addr % 64 == 0);
 
     // Create a wrapper that references the slice we need
-
-    let absolute_offset = body_offset + data_offset;
     let byte_len = data_slice.len();
 
     let wrapper = SliceWrapper {
@@ -2385,4 +2255,152 @@ pub fn convert_fb_field_to_arrow(
         nullable,
         metadata,
     })
+}
+
+/// Decompress a compressed record batch body buffer by buffer, creating a sequential layout
+/// Each buffer is compressed individually with format: 8-byte uncompressed length + compressed data
+/// Returns the decompressed body and the correct offset for each buffer in the decompressed layout
+pub(crate) fn decompress_sequential_body(
+    buffers: &Vector<Buffer>,
+    compressed_body: &[u8],
+) -> io::Result<(Vec<u8>, Vec<usize>)> {
+    let mut decompressed_body = Vec::new();
+    let mut buffer_offsets = Vec::new(); // Offset of each buffer in the decompressed body
+    let mut read_offset = 0; // Offset in the compressed body we're reading from
+    
+    eprintln!("DEBUG: Decompressing {} buffers, compressed_body.len()={}", buffers.len(), compressed_body.len());
+    
+    for i in 0..buffers.len() {
+        let buf = buffers.get(i);
+        let buf_length = buf.length() as usize; // This is the UNCOMPRESSED length
+        
+        eprintln!("DEBUG: Buffer {}: uncompressed_length={}, read_offset={}", i, buf_length, read_offset);
+        
+        // Record the current offset in the decompressed body for this buffer
+        buffer_offsets.push(decompressed_body.len());
+        
+        // Skip buffers with zero length (common for null masks)
+        if buf_length == 0 {
+            eprintln!("DEBUG: Skipping zero-length buffer {}", i);
+            // Zero length buffers still take space in the decompressed output (nothing to decompress)
+            continue;
+        }
+        
+        // Check if this looks like a compressed buffer (starts with 8-byte uncompressed length)
+        if read_offset + 8 > compressed_body.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("Buffer {} header extends beyond body data", i),
+            ));
+        }
+        
+        let header_bytes = &compressed_body[read_offset..read_offset + 8];
+        let uncompressed_len = u64::from_le_bytes(
+            header_bytes.try_into()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("Invalid length header: {}", e)))?
+        ) as usize;
+        
+        eprintln!("DEBUG: Buffer {} header uncompressed_len={}", i, uncompressed_len);
+        
+        // Verify the uncompressed length matches the FlatBuffers metadata
+        if uncompressed_len != buf_length {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Uncompressed length mismatch for buffer {}: header says {}, metadata says {}", 
+                        i, uncompressed_len, buf_length),
+            ));
+        }
+        
+        let compressed_start = read_offset + 8;
+        
+        // For the compressed data size, we need to scan to find the right boundary
+        // since compressed data can be variable size + padding
+        let remaining_body = &compressed_body[compressed_start..];
+        
+        // Try different compression algorithms and find the one that works
+        let compression_types = [
+            #[cfg(feature = "snappy")]
+            Compression::Snappy,
+            #[cfg(feature = "zstd")]
+            Compression::Zstd,
+        ];
+        
+        let mut decompressed = None;
+        let mut actual_compressed_size = 0;
+        
+        for &compression in &compression_types {
+            // Try different compressed sizes - scan forward to find the right size
+            for try_len in 1..=remaining_body.len() {
+                let try_compressed = &remaining_body[..try_len];
+                if let Ok(result) = decompress(try_compressed, compression) {
+                    if result.len() == uncompressed_len {
+                        eprintln!("DEBUG: Successfully decompressed buffer {} with {:?}, size {} -> {}", 
+                                  i, compression, try_len, result.len());
+                        decompressed = Some(result);
+                        actual_compressed_size = try_len;
+                        break;
+                    }
+                }
+            }
+            
+            if decompressed.is_some() {
+                break;
+            }
+        }
+        
+        match decompressed {
+            Some(data) => {
+                decompressed_body.extend_from_slice(&data);
+                // Move read offset past the header + actual compressed data + padding
+                let total_size = 8 + actual_compressed_size;
+                // Add padding to align to 64-byte boundary (Arrow IPC alignment)
+                let aligned_size = ((total_size + 63) / 64) * 64;
+                read_offset += aligned_size;
+                eprintln!("DEBUG: Buffer {} processed, advancing read_offset by {} to {}", i, aligned_size, read_offset);
+            }
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Could not decompress buffer {}", i),
+                ));
+            }
+        }
+    }
+    
+    eprintln!("DEBUG: Decompressed body size: {} bytes", decompressed_body.len());
+    eprintln!("DEBUG: Buffer offsets count: {}", buffer_offsets.len());
+    Ok((decompressed_body, buffer_offsets))
+}
+
+/// Heuristic to detect if a body contains compressed buffers
+/// Looks for the compression header pattern: 8-byte uncompressed length + compressed data
+pub(crate) fn is_body_compressed(buffers: &Vector<Buffer>, body: &[u8]) -> bool {
+    // Check a few buffers with non-zero length for compression headers
+    for i in 0..buffers.len().min(3) {
+        let buf = buffers.get(i);
+        let buf_offset = buf.offset() as usize;
+        let buf_length = buf.length() as usize;
+        
+        // Skip zero-length buffers
+        if buf_length == 0 {
+            continue;
+        }
+        
+        // Check if we have enough bytes for the header
+        if buf_offset + 8 <= body.len() {
+            let header_bytes = &body[buf_offset..buf_offset + 8];
+            if let Ok(header_bytes_arr) = header_bytes.try_into() {
+                let uncompressed_len = u64::from_le_bytes(header_bytes_arr) as usize;
+                
+                // If the header's uncompressed length matches the FlatBuffers metadata length,
+                // and it's a reasonable size, this is likely compressed
+                if uncompressed_len == buf_length && uncompressed_len > 0 && uncompressed_len < 100_000_000 {
+                    eprintln!("DEBUG: Heuristic found compression header at buffer {}: uncompressed_len={}", i, uncompressed_len);
+                    return true;
+                }
+            }
+        }
+    }
+    
+    false
 }

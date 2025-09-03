@@ -25,7 +25,7 @@ use crate::arrow::message::org::apache::arrow::flatbuf as fbm;
 use crate::constants::ARROW_MAGIC_NUMBER;
 use crate::models::decoders::ipc::parser::{
     RecordBatchParser, convert_fb_field_to_arrow, handle_dictionary_batch,
-    handle_record_batch_shared,
+    handle_record_batch_shared, is_body_compressed, decompress_sequential_body,
 };
 
 /// Footer-declared block entry (i.e., offsets/lengths) for a dictionary or record batch.
@@ -223,19 +223,41 @@ impl FileTableReader {
         let rec = fb_msg.header_as_record_batch().ok_or_else(|| {
             io::Error::new(io::ErrorKind::InvalidData, "expected RecordBatch header")
         })?;
-        handle_record_batch_shared(
-            &rec,
-            &self
-                .schema
-                .iter()
-                .map(|a| a.as_ref().clone())
-                .collect::<Vec<_>>(),
-            &self.dictionaries,
-            self.data.clone(),
-            body_offset,
-            body_len,
-        )
+
+        // Check if we need to decompress the body data
+        let body_data = &self.data.as_ref().as_ref()[body_offset..body_offset + body_len];
+        let buffers = rec.buffers().ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no buffers"))?;
+        if is_body_compressed(&buffers, body_data) {
+            let (decompressed_body, _offsets) = decompress_sequential_body(&buffers, body_data)?;
+            let arc_data = Arc::new(decompressed_body.clone());
+            handle_record_batch_shared(
+                &rec,
+                &self
+                    .schema
+                    .iter()
+                    .map(|a| a.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                &self.dictionaries,
+                arc_data,
+                0, // decompressed data starts at offset 0
+                decompressed_body.len(),
+            )
+        } else {
+            handle_record_batch_shared(
+                &rec,
+                &self
+                    .schema
+                    .iter()
+                    .map(|a| a.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                &self.dictionaries,
+                self.data.clone(),
+                body_offset,
+                body_len,
+            )
+        }
     }
+
 
     /// Slice and validate the FlatBuffers message at the given block
     ///
