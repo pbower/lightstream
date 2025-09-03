@@ -293,26 +293,67 @@ impl RecordBatchParser {
                 }
                 #[cfg(feature = "large_string")]
                 ArrowType::LargeString => {
-                    let (data, offsets) = Self::parse_utf8_array::<u64>(
-                        arrow_buf,
-                        &fbuf_meta,
-                        &mut buffer_idx,
-                        field_len,
-                        &field.name,
-                        &arc_opt,
-                    )?;
-                    Array::TextArray(TextArray::String64(Arc::new(StringArray::new(
-                        data,
-                        null_mask.map(|mask| {
-                            assert_eq!(
-                                mask.len(),
-                                field_len,
-                                "String null_mask length must equal number of strings"
-                            );
-                            mask
-                        }),
-                        offsets,
-                    ))))
+                    // Check buffer size to determine if this should be parsed as String32 vs String64
+                    let offsets_buf = fbuf_meta.get(buffer_idx);
+                    let offsets_l = offsets_buf.length() as usize;
+                    let expected_u32_size = (field_len + 1) * 4;
+                    let expected_u64_size = (field_len + 1) * 8;
+                    
+                    if offsets_l == expected_u32_size {
+                        // Likely u32 offsets, parse as String32 instead
+                        let (data, offsets) = Self::parse_utf8_array::<u32>(
+                            arrow_buf,
+                            &fbuf_meta,
+                            &mut buffer_idx,
+                            field_len,
+                            &field.name,
+                            &arc_opt,
+                        )?;
+                        let arr = Array::TextArray(TextArray::String32(Arc::new(StringArray::new(
+                            data,
+                            null_mask.map(|mask| {
+                                assert_eq!(
+                                    mask.len(),
+                                    field_len,
+                                    "String null_mask length must equal number of strings"
+                                );
+                                mask
+                            }),
+                            offsets,
+                        ))));
+                        // Create corrected field with String type instead of LargeString
+                        let corrected_field = Field::new(field.name.clone(), ArrowType::String, field.nullable, Some(field.metadata.clone()));
+                        cols.push(FieldArray::new(corrected_field, arr));
+                        continue;
+                    } else if offsets_l == expected_u64_size {
+                        // u64 offsets, parse normally as String64
+                        let (data, offsets) = Self::parse_utf8_array::<u64>(
+                            arrow_buf,
+                            &fbuf_meta,
+                            &mut buffer_idx,
+                            field_len,
+                            &field.name,
+                            &arc_opt,
+                        )?;
+                        Array::TextArray(TextArray::String64(Arc::new(StringArray::new(
+                            data,
+                            null_mask.map(|mask| {
+                                assert_eq!(
+                                    mask.len(),
+                                    field_len,
+                                    "String null_mask length must equal number of strings"
+                                );
+                                mask
+                            }),
+                            offsets,
+                        ))))
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("Invalid offset buffer size for field {}: got {}, expected {} (u32) or {} (u64)", 
+                                    field.name, offsets_l, expected_u32_size, expected_u64_size),
+                        ));
+                    }
                 }
                 #[cfg(feature = "datetime")]
                 ArrowType::Date32 => {
@@ -1018,6 +1059,7 @@ pub(crate) fn handle_record_batch(
             }
             #[cfg(feature = "large_string")]
             ArrowType::LargeString => {
+                eprintln!("DEBUG: About to extract offset buffer for field '{}'", field.name);
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
                     &buffers,
                     &mut buffer_idx,
@@ -1045,6 +1087,8 @@ pub(crate) fn handle_record_batch(
                 // If buffer size = (n_elements + 1) * 8, it's u64 offsets (String64)
                 let expected_u32_size = (row_count + 1) * 4;
                 let expected_u64_size = (row_count + 1) * 8;
+                eprintln!("DEBUG: LargeString buffer size check for field '{}': got {}, expected {} (u32) or {} (u64), row_count={}",
+                    field.name, offs_slice.len(), expected_u32_size, expected_u64_size, row_count);
                 if offs_slice.len() == expected_u32_size {
                     // Likely u32 offsets, parse as String32 instead
                     let offs_u32 = cast_slice::<u32>(offs_slice);
@@ -1056,7 +1100,9 @@ pub(crate) fn handle_record_batch(
                         )
                         .into(),
                     );
-                    cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                    // Create corrected field with String type instead of LargeString
+                    let corrected_field = Field::new(field.name.clone(), ArrowType::String, field.nullable, Some(field.metadata.clone()));
+                    cols.push(FieldArray::new(corrected_field, Array::TextArray(arr)));
                 } else if offs_slice.len() == expected_u64_size {
                     // Actual u64 offsets
                     let offs = cast_slice::<u64>(offs_slice);
@@ -1584,6 +1630,7 @@ where
             }
             #[cfg(feature = "large_string")]
             ArrowType::LargeString => {
+                eprintln!("DEBUG: About to extract offset buffer for field '{}'", field.name);
                 let (offs_slice, offs_offset) = RecordBatchParser::extract_buffer_slice(
                     &buffers,
                     &mut buffer_idx,
@@ -1637,7 +1684,9 @@ where
 
                     let arr =
                         TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
-                    cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                    // Create corrected field with String type instead of LargeString
+                    let corrected_field = Field::new(field.name.clone(), ArrowType::String, field.nullable, Some(field.metadata.clone()));
+                    cols.push(FieldArray::new(corrected_field, Array::TextArray(arr)));
                 } else if offs_slice.len() == expected_u64_size {
                     // Actual u64 offsets
                     let offs_wrapper = SliceWrapper {

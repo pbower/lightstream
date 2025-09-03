@@ -417,22 +417,11 @@ mod integration {
         use tokio::io::{AsyncRead, AsyncWriteExt, duplex};
 
         let table = build_all_types_table(n_rows);
-        let schema = vec![
-            Field::new("int32", ArrowType::Int32, false, None),
-            Field::new("int64", ArrowType::Int64, false, None),
-            Field::new("uint32", ArrowType::UInt32, false, None),
-            Field::new("uint64", ArrowType::UInt64, false, None),
-            Field::new("float32", ArrowType::Float32, false, None),
-            Field::new("float64", ArrowType::Float64, false, None),
-            Field::new("bool", ArrowType::Boolean, false, None),
-            Field::new("string", ArrowType::String, false, None),
-            Field::new(
-                "cat32",
-                ArrowType::Dictionary(CategoricalIndexType::UInt32),
-                false,
-                None,
-            ),
-        ];
+        let schema: Vec<Field> = table
+            .cols
+            .iter()
+            .map(|c| c.field.as_ref().clone())
+            .collect();
 
         // Write to in-memory stream using TableStreamWriter
         let (mut tx, rx) = duplex(64 * 1024);
