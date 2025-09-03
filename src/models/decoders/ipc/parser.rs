@@ -1040,7 +1040,12 @@ pub(crate) fn handle_record_batch(
                     body.len(),
                 )?;
                 // Check if this is actually u32 offset data misidentified as LargeString
-                if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
+                // For string arrays, we have (n_elements + 1) offsets
+                // If buffer size = (n_elements + 1) * 4, it's u32 offsets (String32)  
+                // If buffer size = (n_elements + 1) * 8, it's u64 offsets (String64)
+                let expected_u32_size = (row_count + 1) * 4;
+                let expected_u64_size = (row_count + 1) * 8;
+                if offs_slice.len() == expected_u32_size {
                     // Likely u32 offsets, parse as String32 instead
                     let offs_u32 = cast_slice::<u32>(offs_slice);
                     let arr = TextArray::String32(
@@ -1052,7 +1057,7 @@ pub(crate) fn handle_record_batch(
                         .into(),
                     );
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
-                } else {
+                } else if offs_slice.len() == expected_u64_size {
                     // Actual u64 offsets
                     let offs = cast_slice::<u64>(offs_slice);
                     let arr = TextArray::String64(
@@ -1064,6 +1069,12 @@ pub(crate) fn handle_record_batch(
                         .into(),
                     );
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                } else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Invalid offset buffer size for field {}: got {}, expected {} (u32) or {} (u64)", 
+                                field.name, offs_slice.len(), expected_u32_size, expected_u64_size),
+                    ));
                 }
             }
             #[cfg(feature = "datetime")]
@@ -1608,7 +1619,12 @@ where
                 let data_buf = minarrow::Buffer::from_shared(data_shared);
 
                 // Check if this is actually u32 offset data misidentified as LargeString
-                if offs_slice.len() % 4 == 0 && offs_slice.len() % 8 != 0 {
+                // For string arrays, we have (n_elements + 1) offsets
+                // If buffer size = (n_elements + 1) * 4, it's u32 offsets (String32)  
+                // If buffer size = (n_elements + 1) * 8, it's u64 offsets (String64)
+                let expected_u32_size = (row_count + 1) * 4;
+                let expected_u64_size = (row_count + 1) * 8;
+                if offs_slice.len() == expected_u32_size {
                     // Likely u32 offsets, parse as String32 instead
                     let offs_wrapper = SliceWrapper {
                         _owner: arc_data.clone(),
@@ -1622,7 +1638,7 @@ where
                     let arr =
                         TextArray::String32(StringArray::new(data_buf, null_mask, offs_buf).into());
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
-                } else {
+                } else if offs_slice.len() == expected_u64_size {
                     // Actual u64 offsets
                     let offs_wrapper = SliceWrapper {
                         _owner: arc_data.clone(),
@@ -1636,6 +1652,12 @@ where
                     let arr =
                         TextArray::String64(StringArray::new(data_buf, null_mask, offs_buf).into());
                     cols.push(FieldArray::new(field.clone(), Array::TextArray(arr)));
+                } else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("Invalid offset buffer size for field {}: got {}, expected {} (u32) or {} (u64)", 
+                                field.name, offs_slice.len(), expected_u32_size, expected_u64_size),
+                    ));
                 }
             }
             ArrowType::Dictionary(idx_ty) => {
