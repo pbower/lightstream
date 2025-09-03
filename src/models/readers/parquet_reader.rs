@@ -31,8 +31,9 @@ use crate::models::decoders::parquet::{
 };
 use crate::models::encoders::parquet::metadata::{
     ColumnChunkMeta, ColumnMetadata, DataPageHeader, DataPageHeaderV2, DictionaryPageHeader,
-    FileMetaData, PARQUET_MAGIC, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
+    FileMetaData, PageHeader, PageType, RowGroupMeta, SchemaElement, Statistics,
 };
+use crate::constants::PARQUET_MAGIC;
 use crate::models::types::parquet::{
     ParquetEncoding, ParquetLogicalType, ParquetPhysicalType, parquet_to_arrow_type,
 };

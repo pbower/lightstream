@@ -120,7 +120,7 @@ mod parquet_writer_integration_tests {
         if let Array::TextArray(a) = &col.array {
             let actual: Vec<String> = a
                 .clone()
-                .to_str32()
+                .str32()
                 .unwrap()
                 .iter()
                 .map(|s| s.to_string())
@@ -154,7 +154,7 @@ mod parquet_writer_integration_tests {
         if let Array::TextArray(a) = &col.array {
             let actual: Vec<String> = a
                 .clone()
-                .to_str32()
+                .str32()
                 .unwrap()
                 .iter()
                 .map(|s| s.to_string())

@@ -14,8 +14,8 @@
 //! # use minarrow::{Field, Table};
 //! # use minarrow::ArrowType::*;
 //! # use minarrow::Field as F;
-//! use minarrow_io::models::encoders::csv::{CsvEncodeOptions};
-//! use minarrow_io::io::csv_writer::CsvWriter;
+//! use lightstream_io::models::encoders::csv::{CsvEncodeOptions};
+//! use lightstream_io::models::writers::csv_writer::CsvWriter;
 //!
 //! // In-memory
 //! let mut w = CsvWriter::new_vec();
@@ -52,30 +52,6 @@ use crate::models::encoders::csv::{CsvEncodeOptions, encode_supertable_csv, enco
 /// - Works with arbitrary sinks: `Vec<u8>`, `File`, sockets, etc.
 /// - Customisable via [`CsvEncodeOptions`]
 /// - Supports both single-batch tables and multi-batch supertables
-///
-/// ## Example
-/// ```no_run
-/// use minarrow::Table;
-/// use minarrow_io::models::encoders::csv::CsvEncodeOptions;
-/// use minarrow_io::io::csv_writer::CsvWriter;
-///
-/// # let table = Table::default();
-///
-/// // In-memory writer with default options
-/// let mut w = CsvWriter::new_vec();
-/// w.write_table(&table).unwrap();
-/// let csv_bytes = w.into_inner();
-///
-/// // File writer with default options
-/// let mut wf = CsvWriter::to_path("out.csv").unwrap();
-/// wf.write_table(&table).unwrap();
-/// wf.flush().unwrap();
-///
-/// // Custom options
-/// let opts = CsvEncodeOptions { delimiter: b';', null_repr: "NULL", ..Default::default() };
-/// let mut wc = CsvWriter::with_options(Vec::new(), opts);
-/// wc.write_table(&table).unwrap();
-/// ```
 pub struct CsvWriter<W: Write> {
     writer: W,
     options: CsvEncodeOptions,

@@ -127,7 +127,8 @@ mod integration {
             None,
         );
 
-        let cols = vec![
+        #[allow(unused_mut)]
+        let mut cols = vec![
             FieldArray::new(
                 Field::new("int32", ArrowType::Int32, false, None),
                 Array::NumericArray(int32),

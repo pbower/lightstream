@@ -136,9 +136,8 @@ pub fn unpack_bits(buf: &[u8], len: usize) -> Vec<bool> {
         .collect()
 }
 
-// =============================================================================
 // SliceWrapper - Temporary workaround for SIMD alignment preservation
-// =============================================================================
+
 // TODO: Use MinArrow SharedBuffer directly and test zero-copy.
 
 use std::sync::Arc;

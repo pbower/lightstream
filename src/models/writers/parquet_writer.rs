@@ -28,8 +28,8 @@
 //! ```no_run
 //! use std::fs::File;
 //! use minarrow::Table;
-//! use minarrow_io::compression::Compression;
-//! use minarrow_io::models::encoders::parquet::writer::write_parquet_table;
+//! use crate::compression::Compression;
+//! use crate::models::encoders::parquet::writer::write_parquet_table;
 //!
 //! # let table = Table::default();
 //! let mut file = File::create("data.parquet").unwrap();
@@ -57,6 +57,7 @@ use crate::models::encoders::parquet::metadata::{
 };
 use crate::models::types::parquet::ParquetLogicalType::{self};
 use crate::models::types::parquet::{ParquetEncoding, arrow_type_to_parquet};
+use crate::constants::PARQUET_MAGIC;
 
 // Chunk size for page splitting
 pub const PAGE_CHUNK_SIZE: usize = 32_768;
