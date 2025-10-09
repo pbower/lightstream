@@ -105,7 +105,7 @@ let stream = FramedByteStream::new(socket, MyFramer);
 ### Write Tables
 ```rust
 use minarrow::{arr_i32, arr_str32, FieldArray, Table};
-use lightstream::io::table_writer::TableWriter;
+use lightstream::table_writer::TableWriter;
 use lightstream::enums::IPCMessageProtocol;
 use tokio::fs::File;
 

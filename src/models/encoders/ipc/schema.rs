@@ -4,7 +4,7 @@
 //! This includes schema messages, record batches, dictionary batches, and the file footer with block metadata.
 //!
 //! Follows the IPC protocol as outlined
-//! [here](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc).
+//! [here](https://arrow.apache.org/docs/format/Columnar.html#serialisation-and-interprocess-communication-ipc).
 //!
 //! Uses the generated FlatBuffers types under `src/arrow/*` (built from `src/flatb/*`).
 
