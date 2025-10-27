@@ -43,6 +43,10 @@ use crate::{AFMessage, AFMessageHeader};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+/// Used for parsing a RecordBatch into a Minarrow `Table`.
+///
+/// Can also be 'intercepted' and used in extreme performance-critical
+/// situations to avoid async overhead.
 pub struct RecordBatchParser;
 
 impl RecordBatchParser {
@@ -64,7 +68,7 @@ impl RecordBatchParser {
             ));
         }
 
-        // TODO: Compression handling
+        // TODO [3]: Compression handling
         if let Some(BodyCompression { .. }) = message
             .header_as_record_batch()
             .and_then(|rb| rb.compression())
@@ -396,7 +400,7 @@ impl RecordBatchParser {
                 }
                 // dictionary
                 ArrowType::Dictionary(idx_ty) => {
-                    // TODO: isDelta check is done in the DictionaryBatch path,
+                    // TODO[5]: isDelta check is done in the DictionaryBatch path,
                     // but we include a guard here in case a delta batch arrives first,
                     // as we do not yet support it.
                     if let Some(dict_batch) = message.header_as_dictionary_batch() {
@@ -437,7 +441,7 @@ impl RecordBatchParser {
                     let bytes_buf: minarrow::Buffer<u8> =
                         unsafe { Self::buffer_from_slice::<u8>(val_slice, val_len, &arc_opt) };
 
-                    // TODO: u32 should be larger or dynamic to handle all variants
+                    // TODO[5]: u32 should be larger or dynamic to handle all variants
                     let offs: &[u32] = offsets_buf.as_ref();
                     let unique_n = offs.len().saturating_sub(1);
                     let mut unique_values = Vec64::<String>::with_capacity(unique_n);
@@ -633,7 +637,7 @@ impl RecordBatchParser {
         }
     }
 
-    // TODO: Dictionary delta support
+    // TODO[5]: Dictionary delta support
 
     /// Checks for the unsupported dictionary delta case.
     ///
@@ -855,10 +859,6 @@ pub(crate) fn handle_record_batch(
         };
 
     for (col_idx, field) in fields.iter().enumerate() {
-        eprintln!(
-            "DEBUG handle_record_batch: Processing field {} ({}), type {:?}",
-            col_idx, field.name, field.dtype
-        );
         let node = nodes.get(col_idx);
         let row_count = node.length() as usize;
 
@@ -1289,10 +1289,6 @@ where
         };
 
     for (col_idx, field) in fields.iter().enumerate() {
-        eprintln!(
-            "DEBUG handle_record_batch_shared: Processing field {} ({}), type {:?}",
-            col_idx, field.name, field.dtype
-        );
         let node = nodes.get(col_idx);
         let row_count = node.length() as usize;
 
@@ -1741,7 +1737,7 @@ where
 ///
 /// Converts FlatBuffers fields to native [`Field`] representations.
 #[inline(always)]
-pub(crate) fn handle_schema_header(af_msg: &fb::Message) -> io::Result<Vec<Field>> {
+pub fn handle_schema_header(af_msg: &fb::Message) -> io::Result<Vec<Field>> {
     // 1. Validate Flatbuffer version
     let version = af_msg.version();
     match version {

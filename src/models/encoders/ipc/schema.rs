@@ -58,7 +58,6 @@ pub fn build_flatbuf_schema<'a>(
     );
     fbb.finish(msg, None);
     let flatbuffers = fbb.finished_data().to_vec();
-    println!("Schema flatbuffer size: {}", flatbuffers.len());
 
     Ok(flatbuffers)
 }
