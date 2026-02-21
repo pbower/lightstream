@@ -41,7 +41,7 @@ use minarrow::{Field, SuperTable, Table};
 
 use crate::enums::{BufferChunkSize, IPCMessageProtocol};
 use crate::models::readers::ipc::table_reader::TableReader;
-use crate::models::streams::stdio::StdinByteStream;
+use crate::models::streams::stdio::{StdinByteStream, from_stdin, from_stdin_default};
 
 /// Async Arrow IPC reader over stdin.
 ///
@@ -58,14 +58,14 @@ impl StdinTableReader {
     ///
     /// Uses `IPCMessageProtocol::Stream` and a 64 KiB chunk size.
     pub fn new() -> Self {
-        let stream = StdinByteStream::default_size();
+        let stream = from_stdin_default();
         let inner = TableReader::new(stream, 64 * 1024, IPCMessageProtocol::Stream);
         Self { inner }
     }
 
     /// Create a stdin table reader with explicit chunk size and protocol.
     pub fn new_with(chunk_size: BufferChunkSize, protocol: IPCMessageProtocol) -> Self {
-        let stream = StdinByteStream::new(chunk_size);
+        let stream = from_stdin(chunk_size);
         let inner = TableReader::new(stream, chunk_size.chunk_size(), protocol);
         Self { inner }
     }

@@ -244,6 +244,9 @@ pub mod models {
 
     /// Stream adapters and sources.
     pub mod streams {
+        /// Generic async byte stream adapter for any `AsyncRead` source.
+        pub mod async_read;
+
         /// Async disk-to-buffer stream.
         pub mod disk;
 
