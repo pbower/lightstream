@@ -65,6 +65,12 @@ pub mod traits {
 
     /// Output buffer abstraction (`Vec<u8>`, `Vec64<u8>`, etc.).
     pub mod stream_buffer;
+
+    /// Transport-level table reader trait
+    pub mod transport_reader;
+
+    /// Transport-level table writer trait
+    pub mod transport_writer;
 }
 
 /// Codec implementations, readers, writers, and I/O models
