@@ -18,6 +18,10 @@ categories = [
     "network-programming",
 ]
 description = "Composable, zero-copy Arrow IPC and native data streaming for Rust with SIMD-aligned I/O, async support, and memory-mapping."
+repository = "https://github.com/pbower/lightstream"
+homepage = "https://github.com/pbower/lightstream"
+documentation = "https://docs.rs/lightstream"
+
 [dependencies]
 tokio = { version = "1", features = ["fs", "io-util", "rt-multi-thread", "macros"] }
 futures-core = "0.3"
