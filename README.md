@@ -176,7 +176,7 @@ The only Arrow-compatible Rust crate providing 64-byte SIMD-aligned readers/writ
 
 Copyright Peter Garfield Bower 2025-2026.
 
-Released under MIT. See [LICENSE](LICENSE) for details, and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for Apache-licensed dependencies.
+Dual-Licensed under AGPL-3.0 and Commercial. See [LICENSE](LICENSE) for details, and [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) for Apache-licensed dependencies.
 
 ## Affiliation Notice
 
